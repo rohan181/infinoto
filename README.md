@@ -30,21 +30,23 @@ Never put the key in a `NEXT_PUBLIC_` variable, browser storage, or client-side 
 
 ### Grow any section
 
-Select a topic and open **Go deeper**. Choose Beginner, Intermediate, or Advanced, optionally add a focus, and generate 3–5 additional subtopics. Select a new subtopic to expand it again. Existing IDs, bookmarks, completion records, and resources remain intact. Each map supports up to 120 topics, including its root. Generation is disabled when fewer than three slots remain.
+Select a topic, expand **Your selected topic** beneath the map, and open **Go deeper**. Choose Beginner, Intermediate, or Advanced, optionally add a focus, and generate 3–5 additional subtopics. Select a new subtopic to expand it again. Existing IDs, bookmarks, completion records, and resources remain intact. Each map supports up to 120 topics, including its root. Generation is disabled when fewer than three slots remain.
 
 The outline follows each topic's first prerequisite; the graph and prerequisite panel retain all dependency edges. Layout is recalculated after expansion, including for older paths when browser storage is loaded.
 
 ### Discover actual sources
 
-Each topic has **YouTube**, **Blogs**, **Books**, **Papers**, and **Other** tabs. Choose a difficulty, then select **Find sources on the web** or **Find more sources**. Recommendations appear in collapsible difficulty groups, with a reason for the level, a direct source link, and when the source was found. Books include author information and any supported publisher, year, or ISBN details; absent metadata is not fabricated.
+The recommendation engine sits beside the learning map on desktop. Open **Content library** for a full-width collection, or change the selected topic using its dropdown. Separate **Videos**, **Channels**, **Playlists**, **Blogs**, **Books**, **Papers**, and **Courses** views support difficulty, title search, and creator filters. **For you** mixes formats, prioritizing topic matches over explicitly labeled broader-path matches. Format and difficulty selections stay in place when changing topics or switching between the map and library.
+
+Cards include direct links, suggested starting knowledge, source attribution, and bookmarks. Video thumbnails use the actual YouTube video ID; channel initials, playlist graphics, and book artwork are illustrative UI elements. Books include author information and any supported publisher, year, or ISBN details; absent metadata is not fabricated. **Show more picks** paginates the local collection without an API call. **Find new…** performs live discovery for the selected format and difficulty.
 
 Discovery uses Anthropic's `web_search_20250305` server tool. Web search must be enabled for your Anthropic organization. It uses up to three searches per search turn (with one continuation if the server pauses), followed by a separate structured ranking request. This separation preserves Anthropic's mandatory search citations. Search usage and the additional model call consume API credits.
 
-Only URLs actually returned in web-search result blocks can become recommendations. The ranker selects source IDs and cannot supply destination URLs. Search pages, unsafe URL schemes, duplicate URLs, and previously collected sources are excluded. Results must match the selected difficulty. If no suitable new sources are found, the UI says so. Live web search establishes that a source was retrieved; it does not guarantee factual quality, full-text access, or future availability. Difficulty is an estimate, and some sources may require payment.
+Only URLs actually returned in web-search result blocks can become live recommendations. The ranker selects source IDs and cannot supply destination URLs. YouTube videos, channels, and playlists are validated separately, so a channel request cannot return videos. Search pages, unsafe URL schemes, duplicate URLs, and previously collected sources are excluded. Results must match the selected difficulty. If no suitable new sources are found, the UI says so. Live web search establishes that a source was retrieved; it does not guarantee factual quality, full-text access, or future availability. Difficulty is an estimate, and some sources may require payment.
 
-Broad Python, mathematics, and neural-network sections also have a small curated starter library of real sources reviewed on 21 September 2026. These cards are labeled **Curated** and work without API access. Specialized topics use live discovery. No resource search URLs are created for new paths; old user bookmarks are retained. The application never silently substitutes a template or fabricated source when Claude fails.
+The curated library covers Python, mathematics, machine learning, neural networks, data analysis, and web development, with source pages reviewed on 21–22 September 2026. These cards are labeled **Curated pick** and work without API access. Matching uses explicit topic tags and path context; it is not live AI ranking. Uncovered topics show an empty state with discovery and clearly labeled external-search options. Authentication or search failures leave existing recommendations available. Search-result pages never appear as recommendation cards; old user bookmarks are retained. The application never silently substitutes a template or fabricated source when Claude fails.
 
-The interface uses an animated SVG infinity background, charcoal and violet colors, a responsive sidebar, and a chat composer with loading, stop, retry, and provider error states. Reduced-motion preferences are respected for CSS animation.
+The interface uses an animated SVG infinity background, charcoal surfaces with violet and mint accents, a responsive sidebar, and a chat composer with loading, stop, retry, and provider error states. Reduced-motion preferences are respected for CSS animation.
 
 ## Storage and privacy
 
@@ -69,13 +71,14 @@ If the app reports an authentication error, replace the key. A billing error mea
 - `app/page.tsx`: Chat interface, navigation, persistence, collections.
 - `components/learning-map.tsx`: Interactive graph and topic/resource explorer.
 - `components/topic-expansion.tsx`: Branch generation controls and recursive outline.
-- `components/topic-resources.tsx`: Difficulty groups, source discovery, and book references.
+- `components/topic-resources.tsx`: Recommendation engine, format and creator filters, source cards, discovery, and book references.
 - `app/api/{chat,expand,resources}/route.ts`: Server-only Claude endpoints.
 - `lib/learning.ts`, `lib/branches.ts`: Schemas, graph validation, layout, and expansion.
 - `lib/resources.ts`, `lib/server/discovery.ts`: Source validation, discovery, and ranking.
 - `lib/curated-resources.ts`: Reviewed starter sources.
+- `lib/recommendations.ts`: Format classification, filters, mixed-format ordering, and bookmark identity.
 - `app/data.ts`: Shared types and example path.
-- `app/globals.css`: Dark theme, responsive layout, and animations.
+- `app/globals.css`, `app/recommendations.css`: Dark theme, learning studio, responsive layout, and animations.
 - `tests/*.test.ts`: Data and API integration tests with a mocked provider.
 
 Production: run `npm run build` followed by `npm start`.

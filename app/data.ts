@@ -1,8 +1,9 @@
 export type Difficulty = "Beginner" | "Intermediate" | "Advanced";
 export type ResourceType = "YouTube" | "Blogs" | "Books" | "Papers" | "Other";
+export type YouTubeKind = "video" | "playlist" | "channel";
 export type Topic = { id: string; title: string; subtitle: string; difficulty: Difficulty; hours: number; icon: string; prerequisites: string[]; children: string[]; x: number; y: number; description: string; concepts: string[]; resources?: Resource[]; parentTopicId?: string; expandedAt?: string };
 export type LearningPath = { id: string; title: string; description: string; topics: Topic[]; createdAt: string; source?: "claude" | "example" };
-export type Resource = { id: string; type: ResourceType; title: string; author: string; meta: string; level: Difficulty; url: string; art: string; reason?: string; provenance?: { kind: "curated" | "web-search"; sourceTitle: string; sourceUrl: string; checkedAt: string }; book?: { authors: string; publisher?: string; year?: string; isbn?: string } };
+export type Resource = { id: string; type: ResourceType; title: string; author: string; meta: string; level: Difficulty; url: string; art: string; reason?: string; youtubeKind?: YouTubeKind; topics?: string[]; matchContext?: "topic" | "path"; provenance?: { kind: "curated" | "web-search"; sourceTitle: string; sourceUrl: string; checkedAt: string }; book?: { authors: string; publisher?: string; year?: string; isbn?: string } };
 
 const layouts = [
   [240, 30], [10, 207], [240, 207], [470, 207],

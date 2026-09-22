@@ -87,7 +87,8 @@ test("resource evidence comes only from real tool results, not model-authored UR
 
 test("direct URLs reject searches, script schemes, and private destinations", () => {
   for (const url of ["javascript:alert(1)", "http://example.com/a", "https://127.0.0.1/a", "https://localhost/a", "https://test.internal/a", "https://example.com/search?q=python", "https://google.com/search?q=python"]) assert.equal(isDirectResourceUrl(url, "Blogs"), false, url);
-  assert.equal(isDirectResourceUrl("https://youtube.com/@channel", "YouTube"), false);
+  assert.equal(isDirectResourceUrl("https://youtube.com/@channel", "YouTube", "channel"), true);
+  assert.equal(isDirectResourceUrl("https://youtube.com/@channel", "YouTube", "video"), false);
   assert.equal(isDirectResourceUrl("https://realpython.com/", "Blogs"), false);
   assert.equal(canonicalUrl("https://www.realpython.com/python-gil/?utm_source=test#intro"), "https://realpython.com/python-gil");
 });
@@ -102,7 +103,7 @@ test("book references retain supported metadata and starter sources have direct 
   for (const topic of path.topics) for (const resource of resourcesForTopic(topic)) assert.ok(resourceRecordSchema.safeParse(resource).success, resource.title);
   const python = resourcesForTopic(path.topics[1]);
   for (const type of ["YouTube", "Blogs", "Books"]) assert.equal(new Set(python.filter(r => r.type === type).map(r => r.level)).size, 3);
-  assert.deepEqual(resourcesForTopic({ ...path.topics[1], title: "Python bytecode specialization" }), []);
+  assert.ok(resourcesForTopic({ ...path.topics[1], title: "Python bytecode specialization" }).length > 0);
 });
 
 const req = (body: unknown, origin = "http://localhost:3000") => new Request("http://localhost:3000/api/resources", { method: "POST", headers: { origin, "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -122,12 +123,21 @@ test("new routes validate requests, expand recursively, search with citations, a
     if (body.tools) {
       searches++; assert.equal(body.output_config, undefined);
       assert.equal(body.tools[0].type, "web_search_20250305");
+      if (mode === "channels") {
+        assert.match(body.messages[0].content, /educational YouTube CHANNELS/);
+        return response([searchBlock([["https://youtube.com/watch?v=MCs5OvhV9S4", "Video to exclude"], ["https://youtube.com/@coreyms", "Corey Schafer"]])]);
+      }
       if (mode === "search-error") return response([{ type: "web_search_tool_result", caller: { type: "direct" }, tool_use_id: "srvtoolu_test", content: { type: "web_search_tool_result_error", error_code: "too_many_requests" } }]);
       if (mode === "pause" && searches === 1) return response([searchBlock([["https://www.youtube.com/watch?v=MCs5OvhV9S4", "Concurrency from the Ground Up"]])], "pause_turn");
       if (mode === "pause") assert.equal(body.messages[1].content[0].content[0].encrypted_content, "encrypted-test-evidence");
       return response([searchBlock([["https://www.youtube.com/watch?v=MCs5OvhV9S4", "Concurrency from the Ground Up"]])]);
     }
     rankings++; assert.ok(body.output_config.format); assert.equal(body.tools, undefined);
+    if (mode === "channels") {
+      const context = JSON.parse(body.messages[0].content);
+      assert.equal(context.youtubeKind, "channel"); assert.equal(context.sources.length, 1);
+      assert.equal(context.sources[0].url, "https://youtube.com/@coreyms");
+    }
     return response([{ type: "text", text: JSON.stringify(rank()), citations: [] }]);
   };
   try {
@@ -137,6 +147,9 @@ test("new routes validate requests, expand recursively, search with citations, a
     const found = await discover(req(resourceInput())); assert.equal(found.status, 200);
     const result = await found.json(); assert.equal(result.resources.length, 1); assert.equal(rankings, 1); assert.equal(searches, 1);
     assert.equal(result.resources[0].level, "Advanced"); assert.ok(!JSON.stringify(result).includes("unit-test-placeholder"));
+    mode = "channels";
+    const channels = await discover(req({ ...resourceInput(), youtubeKind: "channel" }));
+    assert.equal(channels.status, 200); assert.equal((await channels.json()).resources[0].youtubeKind, "channel");
     mode = "pause"; searches = 0;
     assert.equal((await discover(req(resourceInput()))).status, 200); assert.equal(searches, 2);
     mode = "search-error"; const unavailable = await discover(req(resourceInput()));

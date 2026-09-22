@@ -7,7 +7,7 @@ import { type ChatMessage, isLearningPath } from "@/lib/learning";
 import LearningMap, { ResourceCard, type SavedResource } from "@/components/learning-map";
 
 import { appendBranch, layoutLearningPath } from "@/lib/branches";
-import { mergeResources } from "@/lib/resources";
+import { canonicalUrl, mergeResources } from "@/lib/resources";
 
 type Workspace = { paths: LearningPath[]; activeId: string; completed: Record<string, string[]>; saved: SavedResource[]; messages: ChatMessage[]; suggestions: string[] };
 const initial: Workspace = { paths: [layoutLearningPath({ ...initialPath, source: "example" })], activeId: initialPath.id, completed: {}, saved: [], messages: [], suggestions: [] };
@@ -106,7 +106,10 @@ export default function Home() {
   function saveResource(resource: Resource, topicTitle: string) {
     if (!selectedPath) return;
     const id = `${selectedPath.id}:${resource.id}`;
-    setWorkspace(s=>({...s,saved:s.saved.some(r=>r.id===id)?s.saved.filter(r=>r.id!==id):[...s.saved,{...resource,id,topicTitle,pathTitle:selectedPath.title}]}));
+    setWorkspace(s => {
+      const matches = (r: SavedResource) => r.id.startsWith(`${selectedPath.id}:`) && (r.id === id || (r.type === resource.type && canonicalUrl(r.url) === canonicalUrl(resource.url)));
+      return { ...s, saved: s.saved.some(matches) ? s.saved.filter(r => !matches(r)) : [...s.saved, { ...resource, id, topicTitle, pathTitle: selectedPath.title }] };
+    });
   }
   function addBranch(parentId: string, topics: Topic[]) {
     const pathId = selectedPath.id;

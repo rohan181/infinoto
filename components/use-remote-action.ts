@@ -1,23 +1,28 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export function useRemoteAction() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [status, setStatus] = useState<number | null>(null);
   const pending = useRef<AbortController | null>(null);
   useEffect(() => () => { pending.current?.abort(); pending.current = null; }, []);
+  const reset = useCallback(() => {
+    pending.current?.abort(); pending.current = null;
+    setBusy(false); setError(""); setStatus(null);
+  }, []);
   async function run(url: string, body: unknown, onSuccess: (result: unknown) => void) {
     if (pending.current) return;
     const controller = new AbortController();
     pending.current = controller;
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setStatus(null);
     let timedOut = false;
     const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, 118000);
     try {
       const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "The request failed. Please retry.");
+      if (!response.ok) { if (pending.current === controller) setStatus(response.status); throw new Error(result.error || "The request failed. Please retry."); }
       if (pending.current === controller && !controller.signal.aborted) onSuccess(result);
     } catch (failure) {
       if (pending.current === controller) setError(controller.signal.aborted
@@ -28,5 +33,5 @@ export function useRemoteAction() {
       if (pending.current === controller) { pending.current = null; setBusy(false); }
     }
   }
-  return { busy, error, run, clearError: () => setError(""), cancel: () => pending.current?.abort() };
+  return { busy, error, status, run, reset, clearError: () => setError(""), cancel: () => pending.current?.abort() };
 }

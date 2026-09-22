@@ -1,62 +1,106 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowUpRight, BookOpen, Bookmark, ChevronDown, FileText, Globe2, GraduationCap, LoaderCircle, RotateCcw, Search, Square, Youtube } from "lucide-react";
-import type { Difficulty, LearningPath, Resource, ResourceType, Topic } from "@/app/data";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowDown, ArrowRight, ArrowUpRight, BookOpen, Bookmark, Check, ChevronDown, FileText, Globe2, GraduationCap, Library, ListVideo, LoaderCircle, Play, Radio, Search, SlidersHorizontal, Sparkles, Square, X } from "lucide-react";
+import type { LearningPath, Resource, Topic } from "@/app/data";
 import { resourcesForTopic } from "@/lib/curated-resources";
-import { resourceRecordSchema } from "@/lib/resources";
+import { canonicalUrl, resourceRecordSchema } from "@/lib/resources";
+import { balanceFormats, discoveryFilter, filterRecommendations, formats, isResourceSaved, manualSearchUrl, resourceFormat, type RecommendationFormat, type RecommendationLevel } from "@/lib/recommendations";
 import { useRemoteAction } from "./use-remote-action";
 
 export type SavedResource = Resource & { topicTitle: string; pathTitle: string };
-const categories: ResourceType[] = ["YouTube", "Blogs", "Books", "Papers", "Other"];
-const levels: Difficulty[] = ["Beginner", "Intermediate", "Advanced"];
+const formatIcons = { All: Sparkles, Videos: Play, Channels: Radio, Playlists: ListVideo, Blogs: FileText, Books: BookOpen, Papers: GraduationCap, Courses: Library };
+const openLabels = { Videos: "Watch video", Channels: "Visit channel", Playlists: "Open playlist", Blogs: "Read article", Books: "Explore book", Papers: "Read paper", Courses: "Open resource" };
+const levels: RecommendationLevel[] = ["All levels", "Beginner", "Intermediate", "Advanced"];
 
 export function ResourceCard({ resource, saved, onSave }: { resource: Resource; saved: boolean; onSave: () => void }) {
-  const Icon = resource.type === "YouTube" ? Youtube : resource.type === "Papers" ? GraduationCap : resource.type === "Blogs" ? FileText : BookOpen;
-  const provenance = resource.provenance;
-  return <article className="resource-card"><div className={`resource-symbol ${resource.type.toLowerCase()}`}><Icon size={19} /></div><div className="resource-copy">
-    <a href={resource.url} target="_blank" rel="noopener noreferrer">{resource.title}<ArrowUpRight size={13} /></a><span>{resource.author}</span>
-    <div><span className={`level ${resource.level.toLowerCase()}`}>{resource.level}</span><small>{resource.meta}</small></div>
-    {resource.reason && <p className="resource-reason">{resource.reason}</p>}
-    {resource.book && <p className="book-reference">{[resource.book.publisher, resource.book.year, resource.book.isbn ? `ISBN ${resource.book.isbn}` : undefined].filter(Boolean).join(" · ") || "See the source for edition and publisher details."}</p>}
-    {provenance && <span className="source-provenance"><Globe2 size={11} />{provenance.kind === "curated" ? "Curated" : "Web source"} · {new URL(resource.url).hostname.replace(/^www\./, "")}<time dateTime={provenance.checkedAt}>{provenance.kind === "curated" ? "Reviewed" : "Found"} {new Date(provenance.checkedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}</time></span>}
-  </div><button className={`icon-button bookmark-button ${saved ? "is-saved" : ""}`} aria-label={`${saved ? "Unsave" : "Save"} ${resource.title}`} aria-pressed={saved} onClick={onSave}><Bookmark size={16} fill={saved ? "currentColor" : "none"} /></button></article>;
+  const [imageFailed, setImageFailed] = useState(false);
+  const format = resourceFormat(resource), Icon = formatIcons[format];
+  const url = canonicalUrl(resource.url);
+  const videoId = url && format === "Videos" ? new URL(url).searchParams.get("v") : null;
+  const initials = resource.author.split(/\s+/).slice(0, 2).map(part => part[0]).join("");
+  return <article className={`recommendation-card kind-${format.toLowerCase()}`}>
+    <a href={resource.url} target="_blank" rel="noopener noreferrer" className="recommendation-art" aria-label={`${openLabels[format]}: ${resource.title}`} tabIndex={-1}>
+      {videoId && !imageFailed ? <img src={`https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`} alt="" loading="lazy" onError={() => setImageFailed(true)} />
+        : format === "Channels" ? <span className="creator-monogram">{initials}</span>
+        : format === "Books" ? <span className="book-object"><BookOpen size={21} /><span>{resource.title}</span><small>{resource.author.split(",")[0]}</small></span>
+        : format === "Playlists" ? <span className="playlist-art"><i/><i/><i/><ListVideo size={28}/></span>
+        : <span className="reading-art"><Icon size={27} /><i/><i/><i/></span>}
+      {format === "Videos" && <span className="video-play"><Play size={17} fill="currentColor" /></span>}
+      <span className="art-format"><Icon size={10} />{format === "Channels" ? "CREATOR" : format === "Playlists" ? "SERIES" : format === "Books" ? "BOOK" : format === "Videos" ? "VIDEO" : "READ & LEARN"}</span>
+    </a>
+    <div className="recommendation-body"><div className="recommendation-kicker"><span>{resource.author}</span><button className={`save-pick ${saved ? "saved" : ""}`} aria-label={`${saved ? "Unsave" : "Save"} ${resource.title}`} aria-pressed={saved} onClick={onSave}><Bookmark size={15} fill={saved ? "currentColor" : "none"}/></button></div>
+      <h3><a href={resource.url} target="_blank" rel="noopener noreferrer">{resource.title}</a></h3>
+      <div className="recommendation-badges"><span className={`difficulty-dot ${resource.level.toLowerCase()}`}><i/>{resource.level}</span><span>{resource.provenance?.kind === "web-search" ? "Web discovery" : resource.provenance ? "Curated pick" : "Saved resource"}</span></div>
+      {resource.reason && <p className="recommendation-reason">{resource.reason}</p>}
+      {resource.book && <p className="recommendation-book-meta">{[resource.book.publisher, resource.book.year, resource.book.isbn ? `ISBN ${resource.book.isbn}` : undefined].filter(Boolean).join(" · ")}</p>}
+      {resource.matchContext === "path" && <span className="broader-match">Related to your broader learning path</span>}
+      <div className="recommendation-footer"><a href={resource.url} target="_blank" rel="noopener noreferrer">{openLabels[format]}<ArrowUpRight size={13}/></a><span title={resource.provenance ? `Source ${resource.provenance.kind === "curated" ? "reviewed" : "found"} ${resource.provenance.checkedAt.slice(0, 10)}` : undefined}><Globe2 size={10}/>{url ? new URL(url).hostname.replace(/^www\./, "") : "Source"}</span></div>
+    </div>
+  </article>;
 }
 
-export default function TopicResources({ path, topic, saved, onSave, onResources }: {
+export default function TopicResources({ path, topic, saved, onSave, onResources, onSelect, expanded, onExpand }: {
   path: LearningPath; topic: Topic; saved: SavedResource[]; onSave: (resource: Resource, topic: string) => void;
-  onResources: (topicId: string, resources: Resource[]) => void;
+  onResources: (topicId: string, resources: Resource[]) => void; onSelect: (id: string) => void; expanded: boolean; onExpand: () => void;
 }) {
-  const [category, setCategory] = useState<ResourceType>("YouTube");
-  const [level, setLevel] = useState<"All levels" | Difficulty>("All levels");
+  const [format, setFormat] = useState<RecommendationFormat>("All");
+  const [level, setLevel] = useState<RecommendationLevel>("All levels");
+  const [searchFormat, setSearchFormat] = useState<Exclude<RecommendationFormat, "All">>("Videos");
+  const [query, setQuery] = useState("");
+  const [creator, setCreator] = useState("All creators");
   const [notice, setNotice] = useState("");
+  const [count, setCount] = useState(6);
+  const resultsRef = useRef<HTMLDivElement>(null);
   const action = useRemoteAction();
-  const all = resourcesForTopic(topic);
-  const categoryResources = all.filter(r => r.type === category);
-  const resources = categoryResources.filter(r => level === "All levels" || r.level === level);
-  const full = categoryResources.length >= 90;
+  const reset = action.reset;
+  useEffect(() => { reset(); setNotice(""); setQuery(""); setCreator("All creators"); setCount(6); }, [topic.id, reset]);
+  useEffect(() => { resultsRef.current?.scrollTo({ top: 0, behavior: "instant" }); }, [topic.id, format, level, query, creator]);
+  const all = useMemo(() => resourcesForTopic(topic, path.title), [topic, path.title]);
+  const base = filterRecommendations(all, format, level, query);
+  const creators = [...new Set(base.map(r => r.author))];
+  const filtered = creator === "All creators" ? base : base.filter(r => r.author === creator);
+  const resources = format === "All" ? balanceFormats(filtered) : filtered;
+  const effectiveFormat = format === "All" ? searchFormat : format;
+  const target = discoveryFilter(effectiveFormat);
+  const existing = all.filter(r => r.type === target.category);
+  const full = existing.length >= 90;
+  const libraryCount = all.filter(r => r.provenance?.kind === "curated").length;
+  function changeFormat(next: RecommendationFormat) { reset(); setFormat(next); setCreator("All creators"); setNotice(""); setCount(6); }
   function discover() {
     setNotice("");
-    void action.run("/api/resources", { pathTitle: path.title, topicTitle: topic.title, description: topic.description, concepts: topic.concepts, category, level, excludeUrls: categoryResources.map(r => r.url).slice(-90) }, raw => {
+    // Narrow All to the explicitly selected discovery format. This makes the
+    // requested type visible and avoids quietly searching only YouTube.
+    if (format === "All") setFormat(effectiveFormat);
+    setQuery(""); setCreator("All creators"); setCount(6);
+    void action.run("/api/resources", { pathTitle: path.title, topicTitle: topic.title, description: topic.description, concepts: topic.concepts, ...target, level, excludeUrls: existing.map(r => r.url).slice(-90) }, raw => {
       const result = raw as { resources: unknown; note: string };
-      const parsed = resourceRecordSchema.array().max(6).parse(result.resources);
-      onResources(topic.id, parsed);
-      setNotice(typeof result.note === "string" ? result.note : `${parsed.length} new sources added.`);
+      const parsed = resourceRecordSchema.array().max(6).safeParse(result.resources);
+      if (!parsed.success) throw new Error("The source list was incomplete. Your saved recommendations are unchanged; please retry.");
+      const valid = parsed.data.filter(r => resourceFormat(r) === effectiveFormat);
+      onResources(topic.id, valid);
+      setNotice(valid.length ? `${valid.length} new ${effectiveFormat.toLowerCase()} added to this topic.` : "No new matching sources found. Try another format or difficulty.");
     });
   }
-  return <section className="topic-resources" aria-label="Learning resources">
-    <div className="resources-heading"><span><Globe2 size={14} /> LEARN FROM THE SOURCE</span><small>Videos, reading & more</small></div>
-    <div className="resource-tabs" role="tablist" aria-label="Resource category">{categories.map(type => <button key={type} id={`tab-${type}`} role="tab" aria-selected={category === type} aria-controls="resource-results" disabled={action.busy} className={category === type ? "active" : ""} onClick={() => { setCategory(type); setNotice(""); action.clearError(); }}>{type}</button>)}</div>
-    <div className="resource-section"><div className="resource-filter"><span>{resources.length} {resources.length === 1 ? "source" : "sources"}</span><select aria-label="Resource difficulty" value={level} disabled={action.busy} onChange={e => { setLevel(e.target.value as typeof level); setNotice(""); action.clearError(); }}><option>All levels</option>{levels.map(item => <option key={item}>{item}</option>)}</select></div>
-      <button className="discover-button" disabled={action.busy || full} onClick={discover}>{action.busy ? <LoaderCircle size={15} className="spin" /> : action.error ? <RotateCcw size={15} /> : <Search size={15} />}{action.busy ? "Searching the web…" : action.error ? "Retry source search" : resources.length ? "Find more sources" : "Find sources on the web"}{!action.busy && <ArrowUpRight size={13} />}</button>
-      {action.busy && <div className="request-progress" role="status"><span>Finding {level === "All levels" ? "all difficulty levels" : level.toLowerCase()} {category.toLowerCase()}.</span><button className="text-button" onClick={action.cancel}><Square size={11} /> Stop</button></div>}
-      {action.error && <p className="feature-error" role="alert">{action.error}</p>}
-      {notice && <p className="feature-note" role="status">{notice}</p>}
-      {full && <p className="feature-note">You have collected 90 sources in this category. Explore a more specific subtopic for more.</p>}
-      <div id="resource-results" role="tabpanel" aria-labelledby={`tab-${category}`} className="resource-groups">
-        {(level === "All levels" ? levels : [level]).map(difficulty => { const items = resources.filter(r => r.level === difficulty); return <details className="resource-group" key={`${category}-${difficulty}`} open><summary><span className={`level ${difficulty.toLowerCase()}`}>{difficulty}</span><span>{items.length} {items.length === 1 ? "source" : "sources"}</span><ChevronDown size={14} /></summary><div>{items.length ? items.map(resource => <ResourceCard key={resource.id} resource={resource} saved={saved.some(r => r.id === `${path.id}:${resource.id}`)} onSave={() => onSave(resource, topic.title)} />) : <p className="level-empty">No {difficulty.toLowerCase()} sources collected yet. Use web search to discover some.</p>}</div></details>; })}
-      </div>
-      <p className="resource-disclaimer">Direct links to original sources. Difficulty is an estimate; some sources may require payment. Curated examples are labeled separately from live web results.</p>
+  const connectionIssue = [401, 403, 402, 503].includes(action.status || 0);
+  return <section className={`recommendation-engine ${expanded ? "expanded" : ""}`} aria-label="Content recommendations">
+    <header className="engine-header"><div className="engine-eyebrow"><span><Sparkles size={13}/> CONTENT RECOMMENDATIONS</span><span className="library-ready"><i/>Library ready</span></div><div className="engine-title"><div><h2>{expanded ? "Good content. Great progress." : "Your next good find."}</h2><p>Less searching. More learning.</p></div>{!expanded && <button aria-label="Expand content library" className="engine-expand" onClick={onExpand}><ArrowUpRight size={21}/></button>}</div>
+      <label className="engine-topic"><span>FOR THIS TOPIC</span><select aria-label="Recommendation topic" value={topic.id} onChange={e => onSelect(e.target.value)}>{path.topics.map(t => <option key={t.id} value={t.id}>{t.id === "0" ? `${t.title} — overview` : t.title}</option>)}</select><ChevronDown size={15}/></label>
+    </header>
+    <div className="engine-controls"><div className="format-tabs" role="group" aria-label="Content format">{formats.map(item => { const Icon = formatIcons[item]; const total = filterRecommendations(all, item, level).length; return <button key={item} aria-pressed={format === item} className={format === item ? "selected" : ""} onClick={() => changeFormat(item)}><Icon size={14}/>{item === "All" ? "For you" : item}<small>{total}</small></button>; })}</div>
+      <div className="engine-filter-row"><label className="engine-search"><Search size={14}/><input aria-label="Search recommendations" placeholder="Search a title or creator…" value={query} onChange={e => { setQuery(e.target.value); setCount(6); setCreator("All creators"); }}/>{query && <button aria-label="Clear recommendation search" onClick={() => setQuery("")}><X size={13}/></button>}</label><label className="engine-level"><SlidersHorizontal size={13}/><select aria-label="Recommendation difficulty" value={level} onChange={e => { reset(); setLevel(e.target.value as RecommendationLevel); setCreator("All creators"); setNotice(""); setCount(6); }}>{levels.map(item => <option key={item}>{item}</option>)}</select></label></div>
+      <div className="discovery-bar"><span><Globe2 size={13}/>Discover more</span>{format === "All" && <select aria-label="Web discovery format" value={searchFormat} onChange={e => setSearchFormat(e.target.value as typeof searchFormat)}>{formats.filter(f => f !== "All").map(item => <option key={item}>{item}</option>)}</select>}<button onClick={action.busy ? action.cancel : discover} disabled={full && !action.busy}>{action.busy ? <><Square size={12}/>Stop search</> : <><Sparkles size={13}/>{action.error ? "Retry" : `Find new ${effectiveFormat.toLowerCase()}`}<ArrowUpRight size={12}/></>}</button></div>
+    </div>
+    <div className="engine-results" ref={resultsRef} aria-live="polite" aria-busy={action.busy}>
+      {action.busy && <div className="engine-loading" role="status"><LoaderCircle size={18} className="spin"/><div><strong>Following your curiosity…</strong><p>Finding {level === "All levels" ? "relevant" : level.toLowerCase()} {effectiveFormat.toLowerCase()} on the web. Your library stays available below.</p></div></div>}
+      {action.error && <div className="engine-error" role="alert"><span className="error-orbit">!</span><div><strong>{connectionIssue ? "Live discovery is unavailable" : "We couldn’t finish that search"}</strong><p>{connectionIssue ? "Your collected picks are still available. Check the details below or search directly." : action.error}</p>{connectionIssue && <details><summary>Connection details</summary><p>{action.error}</p></details>}<a href={manualSearchUrl(topic.title, effectiveFormat, level)} target="_blank" rel="noopener noreferrer">Search directly instead <ArrowUpRight size={12}/></a></div></div>}
+      {notice && <p className="engine-notice" role="status"><Check size={14}/>{notice}</p>}
+      <div className="results-heading"><div><span>{query ? "SEARCH RESULTS" : format === "All" ? "PICKED FOR YOUR NEXT STEP" : `${format.toUpperCase()} TO EXPLORE`}</span><small>{resources.length} {resources.length === 1 ? "recommendation" : "recommendations"}</small></div>{creators.length > 1 && <select aria-label="Filter by creator" value={creator} onChange={e => { setCreator(e.target.value); setCount(6); }}><option>All creators</option>{creators.map(item => <option key={item}>{item}</option>)}</select>}</div>
+      <div className="recommendation-grid">{resources.slice(0, count).map(resource => <ResourceCard key={resource.id} resource={resource} saved={isResourceSaved(saved, path.id, resource)} onSave={() => onSave(resource, topic.title)}/>)}</div>
+      {!resources.length && <div className="engine-empty"><span><Search size={25}/></span><h3>{query || creator !== "All creators" ? "No picks match that search." : "A new corner to explore."}</h3><p>{level !== "All levels" ? `No ${level.toLowerCase()} ${format === "All" ? "resources" : format.toLowerCase()} in this collection yet.` : "We haven’t collected this combination yet."} Try another filter, discover new sources, or search directly.</p><div><button onClick={() => { setQuery(""); setCreator("All creators"); setLevel("All levels"); changeFormat("All"); }}>Reset filters<ArrowRight size={13}/></button><a href={manualSearchUrl(topic.title, effectiveFormat, level)} target="_blank" rel="noopener noreferrer">Search the web<ArrowUpRight size={13}/></a></div></div>}
+      {count < resources.length && <button className="show-more-picks" onClick={() => setCount(n => n + 6)}>Show {Math.min(6, resources.length - count)} more picks<ArrowDown size={14}/><small>{count} of {resources.length}</small></button>}
+      {full && <p className="engine-footnote">This category has reached 90 collected sources. Explore a deeper topic for more.</p>}
+      <footer className="engine-footnote"><span><Check size={12}/>{libraryCount} curated sources available without live search</span><p>Difficulty reflects suggested starting knowledge. Channels and series may span several levels. Source access can change; some books and articles require payment.</p></footer>
     </div>
   </section>;
 }
