@@ -1,8 +1,8 @@
 export type Difficulty = "Beginner" | "Intermediate" | "Advanced";
-export type ResourceType = "YouTube" | "Blogs" | "Papers" | "Other";
-export type Topic = { id: string; title: string; subtitle: string; difficulty: Difficulty; hours: number; icon: string; prerequisites: string[]; children: string[]; x: number; y: number; description: string; concepts: string[]; resources?: Resource[] };
+export type ResourceType = "YouTube" | "Blogs" | "Books" | "Papers" | "Other";
+export type Topic = { id: string; title: string; subtitle: string; difficulty: Difficulty; hours: number; icon: string; prerequisites: string[]; children: string[]; x: number; y: number; description: string; concepts: string[]; resources?: Resource[]; parentTopicId?: string; expandedAt?: string };
 export type LearningPath = { id: string; title: string; description: string; topics: Topic[]; createdAt: string; source?: "claude" | "example" };
-export type Resource = { id: string; type: ResourceType; title: string; author: string; meta: string; level: Difficulty; url: string; art: string };
+export type Resource = { id: string; type: ResourceType; title: string; author: string; meta: string; level: Difficulty; url: string; art: string; reason?: string; provenance?: { kind: "curated" | "web-search"; sourceTitle: string; sourceUrl: string; checkedAt: string }; book?: { authors: string; publisher?: string; year?: string; isbn?: string } };
 
 const layouts = [
   [240, 30], [10, 207], [240, 207], [470, 207],
@@ -39,27 +39,3 @@ export function createPath(title: string, level: Difficulty = "Beginner"): Learn
 }
 
 export const initialPath = { ...createPath("Machine Learning"), id: "machine-learning" };
-
-export function getResources(topic: Topic, pathTitle: string): Resource[] {
-  if (topic.resources?.length) return topic.resources;
-  const query = `${topic.id === "0" ? pathTitle : `${topic.title} ${pathTitle}`}`;
-  const q = encodeURIComponent(query);
-  if (topic.id === "2" && /machine learning/i.test(pathTitle)) return [
-    { id: "linear-algebra", type: "YouTube", title: "Essence of linear algebra", author: "3Blue1Brown", meta: "Visual lecture series", level: "Beginner", url: "https://www.youtube.com/playlist?list=PLZHQObOWTQDMsr9K-rj53DwVRMYO3t5Yr", art: "linear" },
-    { id: "calculus", type: "YouTube", title: "Essence of calculus", author: "3Blue1Brown", meta: "Visual lecture series", level: "Intermediate", url: "https://www.youtube.com/playlist?list=PLZHQObOWTQDMdJyla2Z3cPn5Eyb9yaSdd", art: "calculus" },
-    { id: "statistics", type: "YouTube", title: "Statistics, made intuitive", author: "StatQuest with Josh Starmer", meta: "Explore the video library", level: "Beginner", url: "https://www.youtube.com/@statquest", art: "stats" },
-    { id: "math-blog", type: "Blogs", title: "A visual introduction to linear algebra", author: "3Blue1Brown", meta: "Visual lessons & explanations", level: "Beginner", url: "https://www.3blue1brown.com/topics/linear-algebra", art: "linear" },
-    { id: "distill", type: "Blogs", title: "Explore machine learning visually", author: "Distill", meta: "Interactive research articles", level: "Advanced", url: "https://distill.pub/", art: "calculus" },
-    { id: "math-papers", type: "Papers", title: "Mathematics for machine learning research", author: "arXiv", meta: "Search open-access papers", level: "Advanced", url: "https://arxiv.org/search/?query=mathematics+machine+learning&searchtype=all", art: "stats" },
-    { id: "math-book", type: "Other", title: "Mathematics for Machine Learning", author: "Deisenroth, Faisal & Ong", meta: "Free textbook · Exercises", level: "Intermediate", url: "https://mml-book.github.io/", art: "linear" },
-    { id: "mit-linear", type: "Other", title: "Linear Algebra · MIT OpenCourseWare", author: "Gilbert Strang · MIT", meta: "Course · Lectures & assignments", level: "Beginner", url: "https://ocw.mit.edu/courses/18-06-linear-algebra-spring-2010/", art: "calculus" },
-  ];
-  return [
-    { id: `${topic.id}-video-b`, type: "YouTube", title: `${topic.title}: start here`, author: "YouTube discovery", meta: "Find beginner tutorials", level: "Beginner", url: `https://www.youtube.com/results?search_query=${q}+beginner+tutorial`, art: "linear" },
-    { id: `${topic.id}-video-i`, type: "YouTube", title: `${topic.title} in practice`, author: "YouTube discovery", meta: "Find project walkthroughs", level: "Intermediate", url: `https://www.youtube.com/results?search_query=${q}+project+tutorial`, art: "calculus" },
-    { id: `${topic.id}-video-a`, type: "YouTube", title: `A deeper look at ${topic.title.toLowerCase()}`, author: "YouTube discovery", meta: "Find advanced lectures", level: "Advanced", url: `https://www.youtube.com/results?search_query=${q}+advanced+lecture`, art: "stats" },
-    ...(["Beginner", "Intermediate", "Advanced"] as Difficulty[]).map((level): Resource => ({ id: `${topic.id}-blog-${level}`, type: "Blogs", title: `${topic.title}: ${level.toLowerCase()} reading`, author: "Article discovery", meta: "Search articles & tutorials", level, url: `https://www.google.com/search?q=${q}+${level.toLowerCase()}+tutorial+article`, art: "linear" })),
-    { id: `${topic.id}-paper`, type: "Papers", title: `Research on ${topic.title.toLowerCase()}`, author: "arXiv", meta: "Search open-access research", level: "Advanced", url: `https://arxiv.org/search/?query=${q}&searchtype=all`, art: "stats" },
-    { id: `${topic.id}-other`, type: "Other", title: `${topic.title} courses & practice`, author: "Learning resource discovery", meta: "Search courses, docs & exercises", level: topic.difficulty, url: `https://www.google.com/search?q=${q}+free+course+documentation+exercises`, art: "calculus" },
-  ];
-}

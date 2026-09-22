@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildLearningPath, requestSchema, resourceUrl, type GeneratedPath } from '../lib/learning';
+import { buildLearningPath, requestSchema, type GeneratedPath } from '../lib/learning';
 import { POST } from '../app/api/chat/route';
 
 function fixture(): GeneratedPath {
@@ -11,12 +11,11 @@ function fixture(): GeneratedPath {
       id: `topic-${i}`, title: ['Exposure', 'Composition', 'Camera controls', 'Portrait lighting', 'Photo editing', 'Portfolio project'][i],
       description: 'Practice the concept with a guided exercise.', difficulty: i < 3 ? 'Beginner' : i < 5 ? 'Intermediate' : 'Advanced', hours: 3,
       prerequisites: parents, concepts: ['Practice', 'Review'],
-      resources: (['YouTube', 'Blogs', 'Papers', 'Other'] as const).map(type => ({ type, title: `Photography ${type}`, query: 'photography exposure tutorial', level: 'Beginner' as const })),
     })),
   };
 }
 
-test('lays out arbitrary topic IDs with correct forward edges and all resource categories', () => {
+test('lays out arbitrary topic IDs with correct forward edges without invented resources', () => {
   const path = buildLearningPath(fixture());
   assert.equal(path.source, 'claude');
   assert.equal(path.topics.length, 7);
@@ -30,27 +29,18 @@ test('lays out arbitrary topic IDs with correct forward edges and all resource c
       assert.ok(parent.children.includes(topic.id));
     }
     if (topic.id !== '0') {
-      assert.equal(new Set(topic.resources?.map(r => r.type)).size, 4);
-      assert.ok(topic.resources?.every(r => r.url.startsWith('https://')));
+      assert.deepEqual(topic.resources, []);
     }
   }
 });
 
-test('rejects duplicate IDs, cycles, dangling prerequisites, and incomplete resource sets', () => {
+test('rejects duplicate IDs, cycles, dangling prerequisites', () => {
   const duplicate = fixture(); duplicate.topics[1].id = duplicate.topics[0].id;
   assert.throws(() => buildLearningPath(duplicate), /duplicate/);
   const cycle = fixture(); cycle.topics[0].prerequisites = ['topic-5'];
   assert.throws(() => buildLearningPath(cycle), /prerequisite order/);
   const missing = fixture(); missing.topics[5].prerequisites = ['missing'];
   assert.throws(() => buildLearningPath(missing), /prerequisite order/);
-  const categories = fixture(); categories.topics[0].resources[0].type = 'Blogs';
-  assert.throws(() => buildLearningPath(categories), /resource category/);
-});
-
-test('encodes model-generated search text into fixed safe destinations', () => {
-  const url = new URL(resourceUrl('YouTube','math & calculus #" <script>'));
-  assert.equal(url.origin,'https://www.youtube.com');
-  assert.equal(url.searchParams.get('search_query'),'math & calculus #" <script>');
 });
 
 test('rejects empty, oversized, and assistant-ending chat input', () => {
