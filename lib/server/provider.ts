@@ -28,11 +28,16 @@ export async function readInput<T>(request: Request, schema: z.ZodType<T>, maxBy
 let windowStart = Date.now(), requests = 0, active = 0;
 export async function withClaude<T>(run: (client: Anthropic, model: string) => Promise<T>): Promise<T> {
   if (!process.env.ANTHROPIC_API_KEY) throw new RequestError("Add a valid ANTHROPIC_API_KEY to .env.local to enable Claude.", 503);
+  return withRequestLimit(() => run(new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 110000, maxRetries: 0 }), process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6"));
+}
+
+/** Shared across providers so switching engines cannot bypass local limits. */
+export async function withRequestLimit<T>(run: () => Promise<T>): Promise<T> {
   if (Date.now() - windowStart > 3600000) { windowStart = Date.now(); requests = 0; }
   if (requests >= 30) throw new RequestError("The hourly generation limit has been reached. Please try again later.", 429);
   if (active >= 2) throw new RequestError("Infinity is working on other requests. Please try again in a moment.", 429);
   requests++; active++;
-  try { return await run(new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 110000, maxRetries: 0 }), process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6"); }
+  try { return await run(); }
   finally { active--; }
 }
 

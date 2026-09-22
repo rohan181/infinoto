@@ -4,18 +4,20 @@ import type { Resource, ResourceType, YouTubeKind } from "@/app/data";
 import { difficultySchema } from "./learning";
 
 export const resourceTypeSchema = z.enum(["YouTube", "Blogs", "Books", "Papers", "Other"]);
+export const discoveryProviderSchema = z.enum(["exa", "claude"]);
 const youtubeKindSchema = z.enum(["video", "playlist", "channel"]);
 export const resourceRecordSchema = z.object({
   id: z.string(), type: resourceTypeSchema, title: z.string().min(1), author: z.string(),
   meta: z.string(), level: difficultySchema, url: z.string(), art: z.string(), reason: z.string().optional(),
   youtubeKind: youtubeKindSchema.optional(), topics: z.array(z.string()).optional(), matchContext: z.enum(["topic", "path"]).optional(),
-  provenance: z.object({ kind: z.enum(["curated", "web-search"]), sourceTitle: z.string(), sourceUrl: z.string(), checkedAt: z.string().datetime() }),
+  provenance: z.object({ kind: z.enum(["curated", "web-search"]), provider: discoveryProviderSchema.optional(), sourceTitle: z.string(), sourceUrl: z.string(), checkedAt: z.string().datetime() }),
   book: z.object({ authors: z.string(), publisher: z.string().optional(), year: z.string().optional(), isbn: z.string().optional() }).optional(),
 }).refine(r => isDirectResourceUrl(r.url, r.type, r.youtubeKind) && canonicalUrl(r.url) === canonicalUrl(r.provenance.sourceUrl), "A resource must match its direct source link.");
 export const resourceRequestSchema = z.object({
   pathTitle: z.string().trim().min(1).max(100), topicTitle: z.string().trim().min(1).max(100),
   description: z.string().max(500).default(""), concepts: z.array(z.string().max(100)).max(6).default([]),
   category: resourceTypeSchema, level: z.enum(["All levels", "Beginner", "Intermediate", "Advanced"]),
+  provider: discoveryProviderSchema.default("claude"),
   youtubeKind: z.enum(["all", "video", "playlist", "channel"]).default("all"),
   excludeUrls: z.array(z.string().max(2000)).max(90).default([]),
 });
@@ -125,7 +127,7 @@ export function buildSourceResources(raw: unknown, sources: SourceRecord[], requ
       author: item.authors || domain, meta: request.category === "Books" ? "Book reference" : "Direct source",
       level: item.level, url: source.url, art: "linear", reason: item.reason,
       ...(request.category === "YouTube" ? { youtubeKind: youtubeKindForUrl(source.url)! } : {}),
-      provenance: { kind: "web-search", sourceTitle: source.title, sourceUrl: source.url, checkedAt: new Date().toISOString() },
+      provenance: { kind: "web-search", provider: request.provider, sourceTitle: source.title, sourceUrl: source.url, checkedAt: new Date().toISOString() },
       ...(request.category === "Books" ? { book: { authors: item.authors || "See source for author details", ...(item.publisher ? { publisher: item.publisher } : {}), ...(item.year ? { year: item.year } : {}), ...(/^\d[\d -]{8,18}[\dX]$/.test(item.isbn || "") ? { isbn: item.isbn! } : {}) } } : {}),
     }];
   });

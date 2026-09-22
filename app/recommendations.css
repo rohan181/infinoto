@@ -416,3 +416,16 @@
 @media(prefers-reduced-motion:reduce){.learning-studio *,.recommendation-card *{scroll-behavior:auto!important;transition:none!important;animation:none!important}
 }
 
+
+/* Discovery provider selection stays separate from filters on collected picks. */
+.discovery-provider-row{display:flex;align-items:center;gap:10px;margin:14px 0 1px;padding-top:12px;border-top:1px solid #30363f;flex-wrap:wrap}
+.discovery-provider-row>span:first-child{font-size:8px;letter-spacing:1px;color:#95a79d;white-space:nowrap}
+.discovery-provider-switch{display:flex;gap:4px;padding:3px;background:#11171a;border:1px solid #333e3c;border-radius:8px}
+.discovery-provider-switch button{display:flex;align-items:center;gap:6px;min-height:30px;padding:5px 10px;border-radius:5px;font-size:11px;color:#aab8b2;min-width:76px}
+.discovery-provider-switch button[aria-pressed=true]{background:#304d3e;color:#d9f2e3;box-shadow:inset 0 0 0 1px #547b62}
+.discovery-provider-switch button:hover{background:#263c32;color:#e2f5e9}
+.provider-mark{display:grid;place-items:center;width:16px;height:16px;font-size:15px;font-weight:650;line-height:1}
+.provider-mark.exa{font-style:italic;color:#b2c3ff}.provider-mark.claude{color:#e5ae99}
+.provider-description{margin-left:auto;font-size:9px;color:#94a69a}
+@media(max-width:1200px){.provider-description{display:none}}
+@media(max-width:600px){.discovery-provider-row{gap:8px;margin-top:12px}.discovery-provider-switch{flex:1;max-width:225px}.discovery-provider-switch button{justify-content:center;flex:1;min-height:35px;padding:6px 9px;font-size:11px}.discovery-provider-row>span:first-child{font-size:8px}}

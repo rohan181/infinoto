@@ -19,6 +19,8 @@ Open http://localhost:3000. The model defaults to `claude-sonnet-4-6`; change `A
 
 Never put the key in a `NEXT_PUBLIC_` variable, browser storage, or client-side code. `.env.local` is ignored by Git. Replace any key that has been shared in a conversation or exposed publicly.
 
+For Exa discovery, also set `EXA_API_KEY` in `.env.local`. Exa works independently of Claude for content recommendations. Chat and map/branch generation still require `ANTHROPIC_API_KEY`.
+
 ## How it works
 
 1. Infinity asks what you want to learn.
@@ -40,9 +42,13 @@ The recommendation engine sits beside the learning map on desktop. Open **Conten
 
 Cards include direct links, suggested starting knowledge, source attribution, and bookmarks. Video thumbnails use the actual YouTube video ID; channel initials, playlist graphics, and book artwork are illustrative UI elements. Books include author information and any supported publisher, year, or ISBN details; absent metadata is not fabricated. **Show more picks** paginates the local collection without an API call. **Find new…** performs live discovery for the selected format and difficulty.
 
-Discovery uses Anthropic's `web_search_20250305` server tool. Web search must be enabled for your Anthropic organization. It uses up to three searches per search turn (with one continuation if the server pauses), followed by a separate structured ranking request. This separation preserves Anthropic's mandatory search citations. Search usage and the additional model call consume API credits.
+Choose **Exa** or **Claude** under **Search with**. The selection is remembered in this browser; Exa is the initial UI default. Switching providers cancels any pending search and clears its error. Already collected cards remain available and new cards identify which provider discovered them. There is no automatic fallback that silently charges a different provider. API clients that omit `provider` retain the previous Claude behavior.
 
-Only URLs actually returned in web-search result blocks can become live recommendations. The ranker selects source IDs and cannot supply destination URLs. YouTube videos, channels, and playlists are validated separately, so a channel request cannot return videos. Search pages, unsafe URL schemes, duplicate URLs, and previously collected sources are excluded. Results must match the selected difficulty. If no suitable new sources are found, the UI says so. Live web search establishes that a source was retrieved; it does not guarantee factual quality, full-text access, or future availability. Difficulty is an estimate, and some sources may require payment.
+**Exa** uses `POST https://api.exa.ai/search` with `type: auto`, content highlights, and a compact output schema for URL, difficulty, author, and suitability. It retrieves and evaluates sources without calling Claude. Generated selections must match a direct URL and title present in Exa's results or grounding citations; unsupported URLs, duplicates, excluded sources, wrong YouTube formats, and wrong difficulty levels are omitted. Book authors are included when supported; this integration does not invent or extract chapter numbers, ISBNs, publishers, or publication years. Missing evaluation output produces an actionable error rather than guessed difficulty labels.
+
+**Claude** uses Anthropic's `web_search_20250305` server tool. Web search must be enabled for your Anthropic organization. It uses up to three searches per search turn (with one continuation if the server pauses), followed by a separate structured ranking request. This separation preserves Anthropic's mandatory search citations. Both providers consume their respective API credits.
+
+For Claude, only URLs actually returned in web-search result blocks can become live recommendations. Its ranker selects source IDs and cannot supply destination URLs. YouTube videos, channels, and playlists are validated separately for both providers, so a channel request cannot return videos. Search pages, unsafe URL schemes, duplicate URLs, and previously collected sources are excluded. Results must match the selected difficulty. If no suitable new sources are found, the UI says so. Live web search establishes that a source was retrieved; it does not guarantee factual quality, full-text access, or future availability. Difficulty is an estimate, and some sources may require payment.
 
 The curated library covers Python, mathematics, machine learning, neural networks, data analysis, and web development, with source pages reviewed on 21–22 September 2026. These cards are labeled **Curated pick** and work without API access. Matching uses explicit topic tags and path context; it is not live AI ranking. Uncovered topics show an empty state with discovery and clearly labeled external-search options. Authentication or search failures leave existing recommendations available. Search-result pages never appear as recommendation cards; old user bookmarks are retained. The application never silently substitutes a template or fabricated source when Claude fails.
 
@@ -50,9 +56,9 @@ The interface uses an animated SVG infinity background, charcoal surfaces with v
 
 ## Storage and privacy
 
-Paths, generated branches, discovered resources, bookmarks, progress, and the current conversation are saved in this browser's localStorage. Existing `rooted-v1` data is migrated into `infinity-v1` without deleting the original data. Chat sends conversation messages to Anthropic; branch generation sends topic context; discovery sends the selected topic, filters, and excluded source URLs. There is no login, database, or cross-device synchronization.
+Paths, generated branches, discovered resources, bookmarks, progress, and the current conversation are saved in this browser's localStorage. Existing `rooted-v1` data is migrated into `infinity-v1` without deleting the original data. The discovery provider preference is stored separately under `infinity-discovery-provider`. Chat sends conversation messages to Anthropic; branch generation sends topic context; discovery sends the selected topic, filters, and excluded source URLs to the selected provider. There is no login, database, or cross-device synchronization.
 
-The three endpoints share same-origin checks, input validation, timeouts, and conservative process-local limits (30 actions per hour, two concurrent actions). This is a single-user local prototype. Before public deployment, add authentication and shared per-user rate limiting; process-local limits do not protect a multi-instance deployment. The key stays in server-side environment variables. Navigation or Stop cancels pending branch/discovery requests, and an error leaves existing data intact.
+The three endpoints share same-origin checks, input validation, timeouts, and conservative process-local limits (30 actions per hour, two concurrent actions), including across discovery providers. This is a single-user local prototype. Before public deployment, add authentication and shared per-user rate limiting; process-local limits do not protect a multi-instance deployment. Keys stay in server-side environment variables. Navigation or Stop cancels pending branch/discovery requests, and an error leaves existing data intact. Raw provider error bodies and credentials are never returned to the browser.
 
 ## Validation
 
@@ -75,6 +81,7 @@ If the app reports an authentication error, replace the key. A billing error mea
 - `app/api/{chat,expand,resources}/route.ts`: Server-only Claude endpoints.
 - `lib/learning.ts`, `lib/branches.ts`: Schemas, graph validation, layout, and expansion.
 - `lib/resources.ts`, `lib/server/discovery.ts`: Source validation, discovery, and ranking.
+- `lib/server/exa.ts`: Independent Exa retrieval, structured evaluation, evidence validation, and sanitized errors.
 - `lib/curated-resources.ts`: Reviewed starter sources.
 - `lib/recommendations.ts`: Format classification, filters, mixed-format ordering, and bookmark identity.
 - `app/data.ts`: Shared types and example path.
