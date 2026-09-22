@@ -4,11 +4,12 @@ import type { Resource, ResourceType, YouTubeKind } from "@/app/data";
 import { difficultySchema } from "./learning";
 
 export const resourceTypeSchema = z.enum(["YouTube", "Blogs", "Books", "Papers", "Other"]);
-export const discoveryProviderSchema = z.enum(["exa", "claude"]);
+export const discoveryProviderSchema = z.enum(["exa", "claude", "youtube"]);
 const youtubeKindSchema = z.enum(["video", "playlist", "channel"]);
 export const resourceRecordSchema = z.object({
   id: z.string(), type: resourceTypeSchema, title: z.string().min(1), author: z.string(),
-  meta: z.string(), level: difficultySchema, url: z.string(), art: z.string(), reason: z.string().optional(),
+  meta: z.string(), level: z.union([difficultySchema, z.literal("Not assessed")]), url: z.string(), art: z.string(), reason: z.string().optional(),
+  youtube: z.object({ channelId: z.string(), durationSeconds: z.number().nonnegative().optional(), publishedAt: z.string().optional(), videoCount: z.number().nonnegative().optional() }).optional(),
   youtubeKind: youtubeKindSchema.optional(), topics: z.array(z.string()).optional(), matchContext: z.enum(["topic", "path"]).optional(),
   provenance: z.object({ kind: z.enum(["curated", "web-search"]), provider: discoveryProviderSchema.optional(), sourceTitle: z.string(), sourceUrl: z.string(), checkedAt: z.string().datetime() }),
   book: z.object({ authors: z.string(), publisher: z.string().optional(), year: z.string().optional(), isbn: z.string().optional() }).optional(),
@@ -20,7 +21,7 @@ export const resourceRequestSchema = z.object({
   provider: discoveryProviderSchema.default("claude"),
   youtubeKind: z.enum(["all", "video", "playlist", "channel"]).default("all"),
   excludeUrls: z.array(z.string().max(2000)).max(90).default([]),
-});
+}).refine(r => r.provider !== "youtube" || r.category === "YouTube", "YouTube discovery only supports YouTube formats.");
 
 export type SourceRecord = { id: number; url: string; title: string; excerpt: string };
 export const rankedSourcesSchema = z.object({

@@ -12,7 +12,7 @@ export function useRemoteAction() {
     pending.current?.abort(); pending.current = null;
     setBusy(false); setError(""); setStatus(null);
   }, []);
-  async function run(url: string, body: unknown, onSuccess: (result: unknown) => void) {
+  const run = useCallback(async (url: string, body: unknown, onSuccess: (result: unknown) => void) => {
     if (pending.current) return;
     const controller = new AbortController();
     pending.current = controller;
@@ -32,6 +32,6 @@ export function useRemoteAction() {
       clearTimeout(timeout);
       if (pending.current === controller) { pending.current = null; setBusy(false); }
     }
-  }
+  }, []);
   return { busy, error, status, run, reset, clearError: () => setError(""), cancel: () => pending.current?.abort() };
 }

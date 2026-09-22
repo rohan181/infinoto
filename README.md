@@ -19,6 +19,8 @@ Open http://localhost:3000. The model defaults to `claude-sonnet-4-6`; change `A
 
 Never put the key in a `NEXT_PUBLIC_` variable, browser storage, or client-side code. `.env.local` is ignored by Git. Replace any key that has been shared in a conversation or exposed publicly.
 
+For YouTube discovery and video comparisons, set `YOUTUBE_API_KEY` in `.env.local` and enable YouTube Data API v3 for its Google Cloud project. The key stays on the server; a service account is not needed for public videos, channels, or playlists. YouTube discovery and comparison work independently of Claude and Exa.
+
 For Exa discovery, also set `EXA_API_KEY` in `.env.local`. Exa works independently of Claude for content recommendations. Chat and map/branch generation still require `ANTHROPIC_API_KEY`.
 
 ## How it works
@@ -42,7 +44,9 @@ The recommendation engine sits beside the learning map on desktop. Open **Conten
 
 Cards include direct links, suggested starting knowledge, source attribution, and bookmarks. Video thumbnails use the actual YouTube video ID; channel initials, playlist graphics, and book artwork are illustrative UI elements. Books include author information and any supported publisher, year, or ISBN details; absent metadata is not fabricated. **Show more picks** paginates the local collection without an API call. **Find new…** performs live discovery for the selected format and difficulty.
 
-Choose **Exa** or **Claude** under **Search with**. The selection is remembered in this browser; Exa is the initial UI default. Switching providers cancels any pending search and clears its error. Already collected cards remain available and new cards identify which provider discovered them. There is no automatic fallback that silently charges a different provider. API clients that omit `provider` retain the previous Claude behavior.
+Choose **YouTube**, **Exa**, or **Claude** under **Search with**. The selection is remembered in this browser; new browsers start with YouTube. YouTube supports Videos, Channels, and Playlists. For other formats, explicitly select Exa or Claude. Switching providers cancels any pending search and clears its error. Already collected cards remain available and new cards identify which provider discovered them. There is no automatic fallback that silently charges a different provider. API clients that omit `provider` retain the previous Claude behavior.
+
+**YouTube** uses the official Data API (`search.list`, then `videos.list`, `channels.list`, or `playlists.list`) to retrieve real titles, channel names, dates, durations, and playlist counts. Results follow YouTube relevance ordering. Difficulty is an estimate from explicit beginner/intermediate/advanced labels in the title; mixed or unlabeled titles are **Not assessed** and appear only under **All levels**. API metadata is cached in server memory for 10 minutes (up to 100 entries) to reduce repeated calls. A search examines up to 20 candidates and adds up to six new matching sources; it may find no new results once that set is collected. Quota, restricted-key, unavailable-video, and connection errors are shown without losing the library.
 
 **Exa** uses `POST https://api.exa.ai/search` with `type: auto`, content highlights, and a compact output schema for URL, difficulty, author, and suitability. It retrieves and evaluates sources without calling Claude. Generated selections must match a direct URL and title present in Exa's results or grounding citations; unsupported URLs, duplicates, excluded sources, wrong YouTube formats, and wrong difficulty levels are omitted. Book authors are included when supported; this integration does not invent or extract chapter numbers, ISBNs, publishers, or publication years. Missing evaluation output produces an actionable error rather than guessed difficulty labels.
 
@@ -54,11 +58,17 @@ The curated library covers Python, mathematics, machine learning, neural network
 
 The interface uses an animated SVG infinity background, charcoal surfaces with violet and mint accents, a responsive sidebar, and a chat composer with loading, stop, retry, and provider error states. Reduced-motion preferences are respected for CSS animation.
 
+### Compare videos from different creators
+
+On a video card, choose **Compare with another creator**. Infinity searches using its title, excludes the starting channel, and lets you refine the query or paste a specific video URL. Select a candidate to see both creators, durations, chapter counts, and a topic-by-topic evidence table. **Shared**, **Only listed in A**, and **Only listed in B** filters highlight overlaps and potential extra material. Chapter evidence links directly to the timestamp; source descriptions are available below the table.
+
+Comparison uses conservative text matching on creator-written chapter headings and exact topic mentions in descriptions. It does not download captions or analyze audio. **Not listed** means no matching metadata evidence, not that a topic is absent from the lesson. Different chapter names may not match, and videos with sparse descriptions may not provide enough evidence. The feature works without an LLM key.
+
 ## Storage and privacy
 
-Paths, generated branches, discovered resources, bookmarks, progress, and the current conversation are saved in this browser's localStorage. Existing `rooted-v1` data is migrated into `infinity-v1` without deleting the original data. The discovery provider preference is stored separately under `infinity-discovery-provider`. Chat sends conversation messages to Anthropic; branch generation sends topic context; discovery sends the selected topic, filters, and excluded source URLs to the selected provider. There is no login, database, or cross-device synchronization.
+Paths, generated branches, discovered resources, bookmarks, progress, and the current conversation are saved in this browser's localStorage. Existing `rooted-v1` data is migrated into `infinity-v1` without deleting the original data. The discovery provider preference is stored separately under `infinity-discovery-provider`. Chat sends conversation messages to Anthropic; branch generation sends topic context; discovery sends the selected topic and filters to the selected provider (Exa and Claude also receive excluded source URLs). YouTube comparison sends video IDs and a title or topic search query to Google. Descriptions and chapter markers are compared locally on the server. There is no login, database, or cross-device synchronization.
 
-The three endpoints share same-origin checks, input validation, timeouts, and conservative process-local limits (30 actions per hour, two concurrent actions), including across discovery providers. This is a single-user local prototype. Before public deployment, add authentication and shared per-user rate limiting; process-local limits do not protect a multi-instance deployment. Keys stay in server-side environment variables. Navigation or Stop cancels pending branch/discovery requests, and an error leaves existing data intact. Raw provider error bodies and credentials are never returned to the browser.
+All API endpoints share same-origin checks, input validation, timeouts, and conservative process-local limits (30 actions per hour, two concurrent actions), including across discovery providers. This is a single-user local prototype. Before public deployment, add authentication and shared per-user rate limiting; process-local limits do not protect a multi-instance deployment. Keys stay in server-side environment variables. Navigation or Stop cancels pending branch/discovery requests, and an error leaves existing data intact. Raw provider error bodies and credentials are never returned to the browser.
 
 ## Validation
 
@@ -68,7 +78,7 @@ npm run typecheck
 npm run build
 ```
 
-Tests cover recursive expansion, large-map layout, preserving existing resources, malformed graphs, direct URL validation, source provenance, difficulty matching, book metadata, deduplication, same-origin handling, and mocked Anthropic chat/expansion/search/error responses. Search tests verify separate discovery/ranking calls and unchanged encrypted evidence across a paused search. Provider-mocked tests do not validate your actual API key, web-search entitlement, or billing account.
+Tests cover recursive expansion, large-map layout, preserving existing resources, malformed graphs, direct URL validation, source provenance, difficulty matching, book metadata, deduplication, same-origin handling, and mocked Anthropic chat/expansion/search/error responses. Search tests verify separate discovery/ranking calls and unchanged encrypted evidence across a paused search. YouTube tests also cover chapter parsing, cross-creator selection, unavailable videos, source evidence, title-based difficulty, caching, quota errors, and server-only credential handling. Provider-mocked tests do not validate your actual API key, web-search entitlement, or billing account.
 
 If the app reports an authentication error, replace the key. A billing error means the Anthropic API account needs credits. A model-not-found error requires an available model in `ANTHROPIC_MODEL`. Error responses never include the provider's headers or credentials.
 
@@ -78,7 +88,9 @@ If the app reports an authentication error, replace the key. A billing error mea
 - `components/learning-map.tsx`: Interactive graph and topic/resource explorer.
 - `components/topic-expansion.tsx`: Branch generation controls and recursive outline.
 - `components/topic-resources.tsx`: Recommendation engine, format and creator filters, source cards, discovery, and book references.
-- `app/api/{chat,expand,resources}/route.ts`: Server-only Claude endpoints.
+- `app/api/{chat,expand,resources,youtube}/route.ts`: Server-only generation, discovery, and comparison endpoints.
+- `components/video-comparison.tsx`, `app/youtube.css`: Accessible video comparison dialog and responsive styles.
+- `lib/youtube.ts`, `lib/server/youtube.ts`: Chapter parsing, evidence comparison, YouTube API metadata, caching, and sanitized errors.
 - `lib/learning.ts`, `lib/branches.ts`: Schemas, graph validation, layout, and expansion.
 - `lib/resources.ts`, `lib/server/discovery.ts`: Source validation, discovery, and ranking.
 - `lib/server/exa.ts`: Independent Exa retrieval, structured evaluation, evidence validation, and sanitized errors.

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "./recommendations.css";
+import "./youtube.css";
 
 export const metadata: Metadata = {
   title: "Infinity — Your curiosity, without limits.",

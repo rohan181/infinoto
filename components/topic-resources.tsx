@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowRight, ArrowUpRight, BookOpen, Bookmark, Check, ChevronDown, FileText, Globe2, GraduationCap, Library, ListVideo, LoaderCircle, Play, Radio, Search, SlidersHorizontal, Sparkles, Square, X } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUpRight, BookOpen, Bookmark, Check, ChevronDown, FileText, Globe2, GitCompareArrows, GraduationCap, Library, ListVideo, LoaderCircle, Play, Radio, Search, SlidersHorizontal, Sparkles, Square, X } from "lucide-react";
 import type { DiscoveryProvider, LearningPath, Resource, Topic } from "@/app/data";
 import { resourcesForTopic } from "@/lib/curated-resources";
 import { canonicalUrl, resourceRecordSchema } from "@/lib/resources";
 import { balanceFormats, discoveryFilter, filterRecommendations, formats, isResourceSaved, manualSearchUrl, resourceFormat, type RecommendationFormat, type RecommendationLevel } from "@/lib/recommendations";
+import VideoComparison from "./video-comparison";
+import { formatDuration } from "@/lib/youtube";
 import { useRemoteAction } from "./use-remote-action";
 
 export type SavedResource = Resource & { topicTitle: string; pathTitle: string };
@@ -13,7 +15,7 @@ const formatIcons = { All: Sparkles, Videos: Play, Channels: Radio, Playlists: L
 const openLabels = { Videos: "Watch video", Channels: "Visit channel", Playlists: "Open playlist", Blogs: "Read article", Books: "Explore book", Papers: "Read paper", Courses: "Open resource" };
 const levels: RecommendationLevel[] = ["All levels", "Beginner", "Intermediate", "Advanced"];
 
-export function ResourceCard({ resource, saved, onSave }: { resource: Resource; saved: boolean; onSave: () => void }) {
+export function ResourceCard({ resource, saved, onSave, onCompare }: { resource: Resource; saved: boolean; onSave: () => void; onCompare?: () => void }) {
   const [imageFailed, setImageFailed] = useState(false);
   const format = resourceFormat(resource), Icon = formatIcons[format];
   const url = canonicalUrl(resource.url);
@@ -31,11 +33,13 @@ export function ResourceCard({ resource, saved, onSave }: { resource: Resource; 
     </a>
     <div className="recommendation-body"><div className="recommendation-kicker"><span>{resource.author}</span><button className={`save-pick ${saved ? "saved" : ""}`} aria-label={`${saved ? "Unsave" : "Save"} ${resource.title}`} aria-pressed={saved} onClick={onSave}><Bookmark size={15} fill={saved ? "currentColor" : "none"}/></button></div>
       <h3><a href={resource.url} target="_blank" rel="noopener noreferrer">{resource.title}</a></h3>
-      <div className="recommendation-badges"><span className={`difficulty-dot ${resource.level.toLowerCase()}`}><i/>{resource.level}</span><span>{resource.provenance?.kind === "web-search" ? `${resource.provenance.provider === "exa" ? "Exa" : resource.provenance.provider === "claude" ? "Claude" : "Web"} discovery` : resource.provenance ? "Curated pick" : "Saved resource"}</span></div>
+      <div className="recommendation-badges"><span className={`difficulty-dot ${resource.level.toLowerCase().replace(/\s+/g, "-")}`}><i/>{resource.level}</span><span>{resource.provenance?.provider === "youtube" ? "YouTube API" : resource.provenance?.kind === "web-search" ? `${resource.provenance.provider === "exa" ? "Exa" : resource.provenance.provider === "claude" ? "Claude" : "Web"} discovery` : resource.provenance ? "Curated pick" : "Saved resource"}</span></div>
+      {resource.youtube && <p className="youtube-resource-meta">{[resource.youtube.durationSeconds !== undefined ? formatDuration(resource.youtube.durationSeconds) : null, resource.youtube.videoCount !== undefined ? `${resource.youtube.videoCount} videos` : null, resource.youtube.publishedAt?.slice(0, 10)].filter(Boolean).join(" · ")}</p>}
       {resource.reason && <p className="recommendation-reason">{resource.reason}</p>}
       {resource.book && <p className="recommendation-book-meta">{[resource.book.publisher, resource.book.year, resource.book.isbn ? `ISBN ${resource.book.isbn}` : undefined].filter(Boolean).join(" · ")}</p>}
       {resource.matchContext === "path" && <span className="broader-match">Related to your broader learning path</span>}
       <div className="recommendation-footer"><a href={resource.url} target="_blank" rel="noopener noreferrer">{openLabels[format]}<ArrowUpRight size={13}/></a><span title={resource.provenance ? `Source ${resource.provenance.kind === "curated" ? "reviewed" : "found"} ${resource.provenance.checkedAt.slice(0, 10)}` : undefined}><Globe2 size={10}/>{url ? new URL(url).hostname.replace(/^www\./, "") : "Source"}</span></div>
+      {videoId && onCompare && <button className="compare-resource" onClick={onCompare}><GitCompareArrows size={14}/>Compare with another creator<ArrowRight size={13}/></button>}
     </div>
   </article>;
 }
@@ -51,18 +55,19 @@ export default function TopicResources({ path, topic, saved, onSave, onResources
   const [creator, setCreator] = useState("All creators");
   const [notice, setNotice] = useState("");
   const [count, setCount] = useState(6);
-  const [provider, setProvider] = useState<DiscoveryProvider>("exa");
-  const providerLabel = provider === "exa" ? "Exa" : "Claude";
+  const [provider, setProvider] = useState<DiscoveryProvider>("youtube");
+  const [compareResource, setCompareResource] = useState<Resource | null>(null);
+  const providerLabel = provider === "youtube" ? "YouTube" : provider === "exa" ? "Exa" : "Claude";
   const resultsRef = useRef<HTMLDivElement>(null);
   const action = useRemoteAction();
   const reset = action.reset;
   useEffect(() => {
     try {
       const previous = localStorage.getItem("infinity-discovery-provider");
-      if (previous === "exa" || previous === "claude") setProvider(previous);
+      if (previous === "exa" || previous === "claude" || previous === "youtube") setProvider(previous);
     } catch { /* Provider switching still works if browser storage is unavailable. */ }
   }, []);
-  useEffect(() => { reset(); setNotice(""); setQuery(""); setCreator("All creators"); setCount(6); }, [topic.id, reset]);
+  useEffect(() => { reset(); setCompareResource(null); setNotice(""); setQuery(""); setCreator("All creators"); setCount(6); }, [topic.id, reset]);
   useEffect(() => { resultsRef.current?.scrollTo({ top: 0, behavior: "instant" }); }, [topic.id, format, level, query, creator, provider]);
   const all = useMemo(() => resourcesForTopic(topic, path.title), [topic, path.title]);
   const base = filterRecommendations(all, format, level, query);
@@ -71,6 +76,7 @@ export default function TopicResources({ path, topic, saved, onSave, onResources
   const resources = format === "All" ? balanceFormats(filtered) : filtered;
   const effectiveFormat = format === "All" ? searchFormat : format;
   const target = discoveryFilter(effectiveFormat);
+  const unsupportedProvider = provider === "youtube" && target.category !== "YouTube";
   const existing = all.filter(r => r.type === target.category);
   const full = existing.length >= 90;
   const libraryCount = all.filter(r => r.provenance?.kind === "curated").length;
@@ -80,6 +86,7 @@ export default function TopicResources({ path, topic, saved, onSave, onResources
     try { localStorage.setItem("infinity-discovery-provider", next); } catch { /* Optional preference. */ }
   }
   function discover() {
+    if (unsupportedProvider) return;
     setNotice("");
     // Narrow All to the explicitly selected discovery format. This makes the
     // requested type visible and avoids quietly searching only YouTube.
@@ -101,19 +108,21 @@ export default function TopicResources({ path, topic, saved, onSave, onResources
     </header>
     <div className="engine-controls"><div className="format-tabs" role="group" aria-label="Content format">{formats.map(item => { const Icon = formatIcons[item]; const total = filterRecommendations(all, item, level).length; return <button key={item} aria-pressed={format === item} className={format === item ? "selected" : ""} onClick={() => changeFormat(item)}><Icon size={14}/>{item === "All" ? "For you" : item}<small>{total}</small></button>; })}</div>
       <div className="engine-filter-row"><label className="engine-search"><Search size={14}/><input aria-label="Search recommendations" placeholder="Search a title or creator…" value={query} onChange={e => { setQuery(e.target.value); setCount(6); setCreator("All creators"); }}/>{query && <button aria-label="Clear recommendation search" onClick={() => setQuery("")}><X size={13}/></button>}</label><label className="engine-level"><SlidersHorizontal size={13}/><select aria-label="Recommendation difficulty" value={level} onChange={e => { reset(); setLevel(e.target.value as RecommendationLevel); setCreator("All creators"); setNotice(""); setCount(6); }}>{levels.map(item => <option key={item}>{item}</option>)}</select></label></div>
-      <div className="discovery-provider-row"><span>SEARCH WITH</span><div className="discovery-provider-switch" role="group" aria-label="Discovery provider">{(["exa", "claude"] as const).map(engine => <button key={engine} aria-pressed={provider === engine} onClick={() => changeProvider(engine)}><span aria-hidden="true" className={`provider-mark ${engine}`}>{engine === "exa" ? "e" : "✳"}</span>{engine === "exa" ? "Exa" : "Claude"}{provider === engine && <Check size={12}/>}</button>)}</div><span className="provider-description">Your choice is saved</span></div>
-      <div className="discovery-bar"><span><Globe2 size={13}/>{providerLabel} discovery</span>{format === "All" && <select aria-label="Web discovery format" value={searchFormat} onChange={e => setSearchFormat(e.target.value as typeof searchFormat)}>{formats.filter(f => f !== "All").map(item => <option key={item}>{item}</option>)}</select>}<button onClick={action.busy ? action.cancel : discover} disabled={full && !action.busy}>{action.busy ? <><Square size={12}/>Stop search</> : <><Sparkles size={13}/>{action.error ? `Retry ${providerLabel}` : `Find new ${effectiveFormat.toLowerCase()}`}<ArrowUpRight size={12}/></>}</button></div>
+      <div className="discovery-provider-row"><span>SEARCH WITH</span><div className="discovery-provider-switch" role="group" aria-label="Discovery provider">{(["youtube", "exa", "claude"] as const).map(engine => <button key={engine} aria-pressed={provider === engine} onClick={() => changeProvider(engine)}><span aria-hidden="true" className={`provider-mark ${engine}`}>{engine === "youtube" ? "▶" : engine === "exa" ? "e" : "✳"}</span>{engine === "youtube" ? "YouTube" : engine === "exa" ? "Exa" : "Claude"}{provider === engine && <Check size={12}/>}</button>)}</div><span className="provider-description">Your choice is saved</span></div>
+      <div className="discovery-bar"><span><Globe2 size={13}/>{providerLabel} discovery</span>{format === "All" && <select aria-label="Web discovery format" value={searchFormat} onChange={e => { reset(); setNotice(""); setSearchFormat(e.target.value as typeof searchFormat); }}>{formats.filter(f => f !== "All").map(item => <option key={item}>{item}</option>)}</select>}<button onClick={action.busy ? action.cancel : discover} disabled={(full || unsupportedProvider) && !action.busy}>{action.busy ? <><Square size={12}/>Stop search</> : <><Sparkles size={13}/>{action.error ? `Retry ${providerLabel}` : `Find new ${effectiveFormat.toLowerCase()}`}<ArrowUpRight size={12}/></>}</button></div>
     </div>
+    {provider === "youtube" && <p className="youtube-discovery-note">{unsupportedProvider ? "Choose Exa or Claude to discover this format. YouTube searches videos, channels, and playlists." : "Direct from YouTube. Difficulty uses labels in creators’ titles; choose All levels to include unlabeled results."}</p>}
     <div className="engine-results" ref={resultsRef} aria-live="polite" aria-busy={action.busy}>
       {action.busy && <div className="engine-loading" role="status"><LoaderCircle size={18} className="spin"/><div><strong>Searching with {providerLabel}…</strong><p>Finding {level === "All levels" ? "relevant" : level.toLowerCase()} {effectiveFormat.toLowerCase()} on the web. Your library stays available below.</p></div></div>}
       {action.error && <div className="engine-error" role="alert"><span className="error-orbit">!</span><div><strong>{connectionIssue ? `${providerLabel} discovery is unavailable` : `${providerLabel} couldn’t finish that search`}</strong><p>{connectionIssue ? "Your collected picks are still available. Try the other provider or check the details below." : action.error}</p>{connectionIssue && <details><summary>Connection details</summary><p>{action.error}</p></details>}<a href={manualSearchUrl(topic.title, effectiveFormat, level)} target="_blank" rel="noopener noreferrer">Search directly instead <ArrowUpRight size={12}/></a></div></div>}
       {notice && <p className="engine-notice" role="status"><Check size={14}/>{notice}</p>}
       <div className="results-heading"><div><span>{query ? "SEARCH RESULTS" : format === "All" ? "PICKED FOR YOUR NEXT STEP" : `${format.toUpperCase()} TO EXPLORE`}</span><small>{resources.length} {resources.length === 1 ? "recommendation" : "recommendations"}</small></div>{creators.length > 1 && <select aria-label="Filter by creator" value={creator} onChange={e => { setCreator(e.target.value); setCount(6); }}><option>All creators</option>{creators.map(item => <option key={item}>{item}</option>)}</select>}</div>
-      <div className="recommendation-grid">{resources.slice(0, count).map(resource => <ResourceCard key={resource.id} resource={resource} saved={isResourceSaved(saved, path.id, resource)} onSave={() => onSave(resource, topic.title)}/>)}</div>
+      <div className="recommendation-grid">{resources.slice(0, count).map(resource => <ResourceCard key={resource.id} resource={resource} saved={isResourceSaved(saved, path.id, resource)} onSave={() => onSave(resource, topic.title)} onCompare={() => setCompareResource(resource)}/>)}</div>
       {!resources.length && <div className="engine-empty"><span><Search size={25}/></span><h3>{query || creator !== "All creators" ? "No picks match that search." : "A new corner to explore."}</h3><p>{level !== "All levels" ? `No ${level.toLowerCase()} ${format === "All" ? "resources" : format.toLowerCase()} in this collection yet.` : "We haven’t collected this combination yet."} Try another filter, discover new sources, or search directly.</p><div><button onClick={() => { setQuery(""); setCreator("All creators"); setLevel("All levels"); changeFormat("All"); }}>Reset filters<ArrowRight size={13}/></button><a href={manualSearchUrl(topic.title, effectiveFormat, level)} target="_blank" rel="noopener noreferrer">Search the web<ArrowUpRight size={13}/></a></div></div>}
       {count < resources.length && <button className="show-more-picks" onClick={() => setCount(n => n + 6)}>Show {Math.min(6, resources.length - count)} more picks<ArrowDown size={14}/><small>{count} of {resources.length}</small></button>}
       {full && <p className="engine-footnote">This category has reached 90 collected sources. Explore a deeper topic for more.</p>}
       <footer className="engine-footnote"><span><Check size={12}/>{libraryCount} curated sources available without live search</span><p>Difficulty reflects suggested starting knowledge. Channels and series may span several levels. Source access can change; some books and articles require payment.</p></footer>
     </div>
+    {compareResource && <VideoComparison key={compareResource.id} resource={compareResource} concepts={topic.concepts} onClose={() => setCompareResource(null)}/>}
   </section>;
 }
