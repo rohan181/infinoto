@@ -6,7 +6,7 @@ export class RequestError extends Error {
 }
 export const failure = (message: string, status: number) => Response.json({ error: message }, { status, headers: { "Cache-Control": "no-store" } });
 
-export async function readInput<T>(request: Request, schema: z.ZodType<T>, maxBytes = 40000): Promise<T> {
+export function checkOrigin(request: Request) {
   const origin = request.headers.get("origin");
   if (origin) {
     try {
@@ -14,6 +14,10 @@ export async function readInput<T>(request: Request, schema: z.ZodType<T>, maxBy
       if (caller.host !== (request.headers.get("host") || new URL(request.url).host) || !["http:", "https:"].includes(caller.protocol)) throw new Error();
     } catch { throw new RequestError("This request must come from Infinity.", 403); }
   }
+}
+
+export async function readInput<T>(request: Request, schema: z.ZodType<T>, maxBytes = 40000): Promise<T> {
+  checkOrigin(request);
   let body: unknown;
   try {
     const text = await request.text();
@@ -28,9 +32,11 @@ export async function readInput<T>(request: Request, schema: z.ZodType<T>, maxBy
 let windowStart = Date.now(), active = 0;
 const requests = { generation: 0, discovery: 0 };
 type RequestBucket = keyof typeof requests;
+export function anthropicApiKey() { return process.env.INFINOTO_ANTHROPIC_API_KEY?.trim() || process.env.ANTHROPIC_API_KEY?.trim(); }
 export async function withClaude<T>(run: (client: Anthropic, model: string) => Promise<T>, bucket: RequestBucket = "generation"): Promise<T> {
-  if (!process.env.ANTHROPIC_API_KEY) throw new RequestError("Add a valid ANTHROPIC_API_KEY to the server environment (.env.local locally or Vercel Project Settings → Environment Variables) to enable Claude.", 503);
-  return withRequestLimit(() => run(new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 110000, maxRetries: 0 }), process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6"), bucket);
+  const apiKey = anthropicApiKey();
+  if (!apiKey) throw new RequestError("Add a valid ANTHROPIC_API_KEY to the server environment (.env.local locally or Vercel Project Settings → Environment Variables) to enable Claude.", 503);
+  return withRequestLimit(() => run(new Anthropic({ apiKey, timeout: 110000, maxRetries: 0 }), process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6"), bucket);
 }
 
 /** Shared across providers so switching engines cannot bypass local limits. */
@@ -45,7 +51,7 @@ export async function withRequestLimit<T>(run: () => Promise<T>, bucket: Request
 
 export function providerFailure(error: unknown): Response {
   if (error instanceof RequestError) return failure(error.message, error.status);
-  if (error instanceof Anthropic.AuthenticationError) return failure("Anthropic rejected the API key. Replace ANTHROPIC_API_KEY in the server environment (.env.local locally or Vercel Project Settings → Environment Variables) with a valid key.", 401);
+  if (error instanceof Anthropic.AuthenticationError) return failure("Anthropic rejected the API key. Replace INFINOTO_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY in the server environment (.env.local locally or Vercel Project Settings → Environment Variables) with a valid key.", 401);
   if (error instanceof Anthropic.PermissionDeniedError) return failure("Your Anthropic account does not have access to this model or web search.", 403);
   if (error instanceof Anthropic.NotFoundError) return failure("The Claude model is unavailable. Check ANTHROPIC_MODEL in the server environment (.env.local locally or Vercel Project Settings → Environment Variables).", 503);
   if (error instanceof Anthropic.RateLimitError) return failure("Claude is rate-limited. Please wait and retry.", 429);

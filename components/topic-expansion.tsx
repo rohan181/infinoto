@@ -6,8 +6,8 @@ import type { Difficulty, LearningPath, Topic } from "@/app/data";
 import { appendBranch, MAX_TOPICS, outlineParent } from "@/lib/branches";
 import { useRemoteAction } from "./use-remote-action";
 
-export default function TopicExpansion({ path, topic, onAdd, onSelect }: {
-  path: LearningPath; topic: Topic; onAdd: (parentId: string, topics: Topic[]) => void; onSelect: (id: string) => void;
+export default function TopicExpansion({ path, topic, onAdd, onSelect, standalone = false, creatingPath = false }: {
+  standalone?: boolean; creatingPath?: boolean; path: LearningPath; topic: Topic; onAdd: (parentId: string, topics: Topic[]) => void; onSelect: (id: string) => void;
 }) {
   const [level, setLevel] = useState<Difficulty>(topic.difficulty === "Beginner" ? "Intermediate" : "Advanced");
   const [focus, setFocus] = useState("");
@@ -27,13 +27,13 @@ export default function TopicExpansion({ path, topic, onAdd, onSelect }: {
     });
   }
   return <section className="branch-section" aria-label="Deeper branches">
-    <details className="branch-dropdown">
-      <summary><span><GitBranch size={15} /> Go deeper <small>{children.length} {children.length === 1 ? "branch" : "branches"}</small></span><ChevronDown size={15} /></summary>
+    <details className="branch-dropdown" open={standalone || undefined}>
+      <summary><span><GitBranch size={15} /> {creatingPath ? "Build your new path" : "Generate more nodes"} <small>{children.length} {children.length === 1 ? "branch" : "branches"}</small></span><ChevronDown size={15} /></summary>
       <div className="branch-content">
         {children.length > 0 && <div className="branch-children">{children.map(child => <button key={child.id} onClick={() => onSelect(child.id)}><span><strong>{child.title}</strong><small>{child.difficulty} · {child.hours}h</small></span><ArrowUpRight size={14} /></button>)}</div>}
-        <p>Grow this section into 3–5 new subtopics. Every new branch can go deeper, too.</p>
+        <p>{creatingPath ? "Create a separate path with 3–5 new topics, starting from this node. You can keep expanding every node in your new path." : "Grow this section into 3–5 new subtopics. Every new node can go deeper, too."}</p>
         <div className="branch-inputs"><label>Branch difficulty<select aria-label="Branch difficulty" value={level} disabled={action.busy} onChange={e => setLevel(e.target.value as Difficulty)}><option>Beginner</option><option>Intermediate</option><option>Advanced</option></select></label><label>Specific focus <span>optional</span><input aria-label="Branch focus" value={focus} maxLength={250} disabled={action.busy} onChange={e => setFocus(e.target.value)} placeholder="e.g. internals or real-world projects" /></label></div>
-        <button className="branch-generate" disabled={action.busy || full} onClick={expand}>{action.busy ? <LoaderCircle size={15} className="spin" /> : action.error ? <RotateCcw size={15} /> : <Plus size={15} />}{action.busy ? "Growing your branch…" : action.error ? "Retry branch generation" : children.length ? "Generate more branches" : "Generate deeper branches"}</button>
+        <button className="branch-generate" disabled={action.busy || full} onClick={expand}>{action.busy ? <LoaderCircle size={15} className="spin" /> : action.error ? <RotateCcw size={15} /> : <Plus size={15} />}{action.busy ? (creatingPath ? "Creating your path…" : "Growing your branch…") : action.error ? "Retry branch generation" : creatingPath ? "Generate new path" : "Generate nodes"}</button>
         {action.busy && <div className="request-progress" role="status"><span>Claude is connecting new concepts.</span><button className="text-button" onClick={action.cancel}><Square size={11} /> Stop</button></div>}
         {full && <p className="feature-note">This map has reached its {MAX_TOPICS}-topic capacity. Create a focused path to keep exploring.</p>}
         {action.error && <p className="feature-error" role="alert">{action.error}</p>}

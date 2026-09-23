@@ -1,7 +1,8 @@
 import type { Difficulty, Resource, ResourceType, YouTubeKind } from "@/app/data";
+import { socialSearchUrl, type SocialFilter } from "./social";
 import { canonicalUrl, youtubeKindForUrl } from "./resources";
 
-export const formats = ["All", "Videos", "Channels", "Playlists", "Blogs", "Books", "Papers", "Courses"] as const;
+export const formats = ["All", "Videos", "Channels", "Playlists", "Blogs", "Books", "Papers", "Social", "Courses"] as const;
 export type RecommendationFormat = typeof formats[number];
 export type RecommendationLevel = "All levels" | Difficulty;
 export function resourceFormat(resource: Resource): Exclude<RecommendationFormat, "All"> {
@@ -33,7 +34,8 @@ export function balanceFormats(resources: Resource[]): Resource[] {
 export function isResourceSaved(resources: Resource[], pathId: string, resource: Resource): boolean {
   return resources.some(item => item.id.startsWith(`${pathId}:`) && (item.id === `${pathId}:${resource.id}` || (item.type === resource.type && canonicalUrl(item.url) === canonicalUrl(resource.url))));
 }
-export function manualSearchUrl(topic: string, format: RecommendationFormat, level: RecommendationLevel): string {
+export function manualSearchUrl(topic: string, format: RecommendationFormat, level: RecommendationLevel, socialPlatform: SocialFilter = "All"): string {
+  if (format === "Social") return socialSearchUrl(topic, socialPlatform);
   const query = [topic, level === "All levels" ? "" : level, format === "All" ? "learning resources" : format].filter(Boolean).join(" ");
   return ["Videos", "Channels", "Playlists"].includes(format) ? `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}` : `https://www.google.com/search?q=${encodeURIComponent(query)}`;
 }

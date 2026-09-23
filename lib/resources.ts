@@ -1,9 +1,10 @@
 import { z } from "zod";
 import type { ContentBlock } from "@anthropic-ai/sdk/resources/messages";
 import type { Resource, ResourceType, YouTubeKind } from "@/app/data";
+import { matchesSocialPlatform, socialPlatforms, socialSource } from "./social";
 import { difficultySchema } from "./learning";
 
-export const resourceTypeSchema = z.enum(["YouTube", "Blogs", "Books", "Papers", "Other"]);
+export const resourceTypeSchema = z.enum(["YouTube", "Blogs", "Books", "Papers", "Social", "Other"]);
 export const discoveryProviderSchema = z.enum(["exa", "claude", "youtube"]);
 const youtubeKindSchema = z.enum(["video", "playlist", "channel"]);
 export const resourceRecordSchema = z.object({
@@ -18,6 +19,7 @@ export const resourceRequestSchema = z.object({
   pathTitle: z.string().trim().min(1).max(100), topicTitle: z.string().trim().min(1).max(100),
   description: z.string().max(500).default(""), concepts: z.array(z.string().max(100)).max(6).default([]),
   focus: z.string().trim().max(100).default(""),
+  socialPlatform: z.enum(["All", ...socialPlatforms]).optional(),
   category: resourceTypeSchema, level: z.enum(["All levels", "Beginner", "Intermediate", "Advanced"]),
   provider: discoveryProviderSchema.default("claude"),
   youtubeKind: z.enum(["all", "video", "playlist", "channel"]).default("all"),
@@ -42,6 +44,9 @@ export function canonicalUrl(input: string): string | null {
     url.hash = "";
     for (const key of [...url.searchParams.keys()]) if (/^utm_|^(fbclid|gclid|si|feature)$/i.test(key)) url.searchParams.delete(key);
     url.hostname = url.hostname.replace(/^www\./, "");
+    if (["twitter.com", "mobile.twitter.com"].includes(url.hostname)) url.hostname = "x.com";
+    if (["old.reddit.com", "m.reddit.com"].includes(url.hostname)) url.hostname = "reddit.com";
+    if (url.hostname === "m.tiktok.com") url.hostname = "tiktok.com";
     if (url.hostname === "m.youtube.com") url.hostname = "youtube.com";
     url.pathname = url.pathname.replace(/^\/%40/i, "/@");
     if (url.hostname === "youtu.be") { const id = url.pathname.slice(1); if (/^[\w-]{11}$/.test(id)) return `https://youtube.com/watch?v=${id}`; }
@@ -81,6 +86,8 @@ export function isDirectResourceUrl(raw: string, category?: ResourceType, kind: 
   if (/^(?:www\.)?(?:google\.[a-z.]+|bing\.com|duckduckgo\.com|search\.yahoo\.com|scholar\.google\.com)$/.test(host)) return false;
   if (/\/(?:search|results)(?:\/|$)/i.test(url.pathname) || url.searchParams.has("search_query")) return false;
   const youtube = /^(?:m\.)?youtube\.com$/.test(host);
+  if (category === "Social") return !!socialSource(normalized);
+  if (category === "Blogs" && socialSource(normalized)) return false;
   if (category === "YouTube") { const actual = youtubeKindForUrl(normalized); return !!actual && (kind === "all" || actual === kind); }
   if (youtube || host === "youtu.be") return !category;
   if (category === "Blogs" && (url.pathname === "/" || /(?:^|\.)(?:arxiv\.org|reddit\.com|quora\.com|stackoverflow\.com|stackexchange\.com)$/.test(host)
@@ -125,6 +132,7 @@ export function buildSourceResources(raw: unknown, sources: SourceRecord[], requ
     if (!source) throw new Error("A recommendation does not match a retrieved source.");
     if (request.level !== "All levels" && item.level !== request.level) return [];
     if (!isDirectResourceUrl(source.url, request.category, request.youtubeKind)) throw new Error("The recommendation is not a direct source link of the requested format.");
+    if (request.category === "Social" && !matchesSocialPlatform(source.url, request.socialPlatform)) return [];
     const domain = new URL(source.url).hostname;
     return [{
       id: `source-${crypto.randomUUID()}`, type: request.category, title: source.title,

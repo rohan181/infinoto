@@ -1,5 +1,5 @@
 export type Difficulty = "Beginner" | "Intermediate" | "Advanced";
-export type ResourceType = "YouTube" | "Blogs" | "Books" | "Papers" | "Other";
+export type ResourceType = "YouTube" | "Blogs" | "Books" | "Papers" | "Social" | "Other";
 export type YouTubeKind = "video" | "playlist" | "channel";
 export type DiscoveryProvider = "exa" | "claude" | "youtube";
 export type Topic = { id: string; title: string; subtitle: string; difficulty: Difficulty; hours: number; icon: string; prerequisites: string[]; children: string[]; x: number; y: number; description: string; concepts: string[]; resources?: Resource[]; parentTopicId?: string; expandedAt?: string };

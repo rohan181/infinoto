@@ -4,6 +4,7 @@ import type { ContentBlock } from "@anthropic-ai/sdk/resources/messages";
 import type { z } from "zod";
 import { buildSourceResources, extractSources, rankedSourcesSchema, resourceRequestSchema } from "@/lib/resources";
 import { RequestError } from "./provider";
+import { matchesSocialPlatform, socialDomains } from "@/lib/social";
 import { searchSubject } from "@/lib/topic-search";
 
 export async function discoverResources(client: Anthropic, model: string, input: z.infer<typeof resourceRequestSchema>, signal: AbortSignal) {
@@ -12,6 +13,7 @@ export async function discoverResources(client: Anthropic, model: string, input:
       : input.youtubeKind === "playlist" ? "Find organized educational YouTube PLAYLISTS from credible instructors, using direct /playlist?list=... URLs. Do not return single videos or channel homepages. Never invent video counts."
       : input.youtubeKind === "video" ? "Find specific educational YouTube VIDEOS with direct /watch?v=... URLs. Exclude channels, playlists, promotional lists, and search pages."
       : "Find specific educational YouTube videos, playlists, or instructor channels. Use direct watch, playlist, or channel URLs. Exclude search pages and promotional lists.",
+    Social: `Find relevant public educational posts, discussions, communities, or creator profiles on ${input.socialPlatform && input.socialPlatform !== "All" ? input.socialPlatform : "Reddit, X, LinkedIn, Instagram, and TikTok"}. Prefer posts explaining the topic. Use direct source links, never login, search, or redirect pages. Never invent likes, follower counts, verification status or access claims. Prefer different creators and platforms where applicable.`,
     Blogs: "Find specific original articles, technical essays, or tutorials by the authors or reputable educational publications. Exclude homepages and lists of links.",
     Books: "Find real published textbooks or practical books. Prefer publisher product pages, official author book websites, or library catalog records. Identify authors, publisher, publication year, and ISBN only when the retrieved source explicitly supplies them. Exclude pirated downloads and generic book-search pages.",
     Papers: "Find specific papers or surveys on publisher, conference, university, arXiv abstract, or open-access repository pages. Prefer surveys for beginners and original research for advanced learners.",
@@ -27,7 +29,7 @@ You MUST call web_search, not answer from memory. Use at most three targeted sea
   const messages: Anthropic.MessageParam[] = [{ role: "user", content: prompt }];
   for (let continuation = 0; continuation < 2; continuation++) {
     const response = await client.messages.create({ model, max_tokens: 3500,
-      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3, ...(input.category === "YouTube" ? { allowed_domains: ["youtube.com", "youtu.be"] } : {}) }],
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3, ...(input.category === "YouTube" ? { allowed_domains: ["youtube.com", "youtu.be"] } : input.category === "Social" ? { allowed_domains: socialDomains(input.socialPlatform) } : {}) }],
       messages,
     }, { signal });
     blocks.push(...response.content);
@@ -35,7 +37,8 @@ You MUST call web_search, not answer from memory. Use at most three targeted sea
     // Preserve all encrypted search blocks unchanged when the server tool pauses.
     messages.push({ role: "assistant", content: response.content });
   }
-  const { sources, toolErrors } = extractSources(blocks, input.category, input.excludeUrls, input.youtubeKind);
+  const { sources: foundSources, toolErrors } = extractSources(blocks, input.category, input.excludeUrls, input.youtubeKind);
+  const sources = input.category === "Social" ? foundSources.filter(source => matchesSocialPlatform(source.url, input.socialPlatform)) : foundSources;
   if (!sources.length) {
     if (toolErrors.length) throw new RequestError("Web search is temporarily unavailable or hit its limit. Please retry in a moment.", 503);
     return { resources: [], note: "No new direct sources were found for this topic and level. Try a different level or category.", searchedAt: new Date().toISOString() };

@@ -93,3 +93,15 @@ export function appendBranch(path: LearningPath, parentId: string, additions: To
 export function outlineParent(topic: Topic): string | undefined {
   return topic.prerequisites[0] || topic.parentTopicId;
 }
+
+/** Start an independent map from any topic without carrying unrelated prerequisites. */
+export function createTopicPath(topic: Topic): LearningPath {
+  return layoutLearningPath({
+    id: crypto.randomUUID(), title: topic.title,
+    description: `A focused learning path for ${topic.title}. ${topic.description}`.slice(0, 500),
+    createdAt: new Date().toISOString(), source: "claude",
+    topics: [{ ...topic, id: "0", hours: 0, prerequisites: [], children: [],
+      parentTopicId: undefined, expandedAt: undefined, resources: [...(topic.resources || [])],
+      concepts: [...topic.concepts], icon: "spark" }],
+  });
+}

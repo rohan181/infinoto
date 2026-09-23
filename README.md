@@ -60,6 +60,10 @@ The curated library covers Python, mathematics, machine learning, neural network
 
 The interface uses an animated SVG infinity background, charcoal surfaces with violet and mint accents, a responsive sidebar, and a chat composer with loading, stop, retry, and provider error states. Reduced-motion preferences are respected for CSS animation.
 
+### Social content for each topic
+
+Choose **Social** in the content library to discover public posts, discussions, communities, and creators on **Reddit, X, LinkedIn, Instagram, and TikTok**. Use **All platforms** or a single-platform filter; both Exa and Claude searches enforce that selection. Cards identify the platform, link directly to the original content, and support bookmarks. Social resources also appear in cross-content analysis and its graph. For unavailable post text, paste an excerpt into the analysis dialog. Search covers indexed public pages, not authenticated feeds; platform access and indexing can limit results. No social account connection is required by Infinity.
+
 ### Compare videos from different creators
 
 On a video card, choose **Compare with another creator**. Infinity searches using its title, excludes the starting channel, and lets you refine the query or paste a specific video URL. Select a candidate to see both creators, durations, chapter counts, and a topic-by-topic evidence table. Clickable coverage summary cards and **Shared**, **Only listed in A**, and **Only listed in B** filters highlight overlaps and potential extra material. Search within the comparison to find a topic. Mobile uses stacked evidence cards; desktop uses a table. The dialog has a persistent close button and restores keyboard focus. Chapter evidence links directly to the timestamp; source descriptions are available below the table.
@@ -110,3 +114,18 @@ Production: run `npm run build` followed by `npm start`.
 ## Vercel configuration
 
 Local `.env.local` values are not uploaded to Vercel. In the existing **infinoto** project's Settings → Environment Variables, set `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `YOUTUBE_API_KEY`, and `EXA_API_KEY` for Production (and Preview if desired), then redeploy. Keep all keys server-only, without a `NEXT_PUBLIC_` prefix. `GET /api/resources` reports only configuration booleans and never validates or reveals keys; successful search requests verify provider access. A configured key can still fail due to quota, permissions, or billing.
+
+## Cross-content analysis and Whisper
+
+Open a learning topic and choose **Cross-content analysis** above the format tabs. Select 2–6 resources across the current learning path and saved collection, or add direct HTTPS links. Selection is independent of the current Videos/Blogs/Web tab. Click **Analyze selected sources** to compare concept coverage and see a suggested learning order with source excerpts.
+
+- Claude analyzes the selected topic against supplied evidence. Every concept/learning-order citation must resolve to a source-owned evidence ID. Links, quotes, and timestamps come from that evidence, not model-generated URLs. Coverage judgments and learning-order reasons remain AI estimates; valid citations do not guarantee the inference is correct.
+- Exa's `/contents` endpoint retrieves article, documentation, paper, and landing-page text. Extraction failures leave clearly labeled title-only evidence. Retrieved pages are labeled as potentially partial; a book/course landing page does not represent the full work. Up to 18,000 characters per source and 100 evidence segments are analyzed.
+- YouTube's official API supplies video descriptions and chapter markers. Those remain **Metadata only**, with coverage capped at **mention**. The app does not download arbitrary YouTube audio or claim it has retrieved transcripts. Paste a transcript or import TXT, SRT, VTT, or Markdown to analyze spoken content. Caption timestamps are preserved; article text is untimed.
+- **Transcribe with Whisper** accepts MP3, MP4, MPEG, MPGA, M4A, WAV, or WebM files and calls OpenAI's `whisper-1` with segment timestamps. Set server-only `OPENAI_API_KEY` in `.env.local` and the Vercel environment; restart/redeploy afterward. Missing credentials disable audio uploads with a visible explanation. Claude text analysis works independently of this key. The 4 MB per-file limit leaves room for multipart overhead on the Vercel deployment; use shorter/compressed clips or import transcripts for long recordings. For video excerpts, enter the clip's start time in the original video before uploading. Review transcription errors before analysis.
+
+Audio is sent to OpenAI; source text is sent to Anthropic; web URLs are sent to Exa. Uploaded text and comparison results are held in dialog memory, not localStorage or a database, and cleared when the dialog closes. No application-level transcript cache or background queue is used in this initial on-demand implementation. Provider retention policies apply. Close/Stop cancels pending analysis or transcription. Limits and sanitized error handling are shared with existing generation endpoints. New endpoints are `/api/content-analysis` and `/api/transcribe`.
+
+Tests cover SRT/VTT timestamps, clip offsets, resource deduplication, bounded uploads without Content-Length, credential isolation, provider failures, retrieval provenance, and rejection of nonexistent/cross-source evidence citations. Whisper network calls are mocked when no OpenAI key is configured; this does not verify account billing or live transcription quality.
+
+If an unrelated shell tool exports `ANTHROPIC_API_KEY`, Next.js preserves that shell value ahead of `.env.local`. Set `INFINOTO_ANTHROPIC_API_KEY` for this project to take precedence; all Claude features and configuration checks support it, with `ANTHROPIC_API_KEY` as the fallback. Do not expose either variable to the client.

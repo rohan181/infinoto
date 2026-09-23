@@ -164,3 +164,27 @@ test("new routes validate requests, expand recursively, search with citations, a
     if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = originalKey;
   }
 });
+
+test("any node can become an independent, expandable path that survives storage", async () => {
+  const { createTopicPath } = await import("../lib/branches");
+  const original = layoutLearningPath(createPath("Machine Learning"));
+  const node = original.topics[7];
+  node.resources = resourcesForTopic(node);
+  const before = JSON.stringify(original);
+  const seed = createTopicPath(node);
+  assert.notEqual(seed.id, original.id);
+  assert.equal(seed.title, node.title);
+  assert.deepEqual(seed.topics[0].prerequisites, []);
+  assert.deepEqual(seed.topics[0].resources, node.resources);
+  assert.equal(seed.topics[0].parentTopicId, undefined);
+  const additions = createBranchTopics(branch("0", "focused"), context(seed, "0"));
+  const focused = appendBranch(seed, "0", additions);
+  assert.ok(isLearningPath(JSON.parse(JSON.stringify(focused))));
+  checkLayout(focused);
+  const nested = createBranchTopics(branch(additions[0].id, "deeper"), context(focused, additions[0].id));
+  checkLayout(appendBranch(focused, additions[0].id, nested));
+  assert.equal(JSON.stringify(original), before);
+  const rootPath = createTopicPath(original.topics[0]);
+  assert.deepEqual(rootPath.topics[0].children, []);
+  assert.deepEqual(rootPath.topics[0].prerequisites, []);
+});

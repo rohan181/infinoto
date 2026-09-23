@@ -26,3 +26,17 @@ test("configuration endpoint returns only flags, ignoring blank and placeholder 
     assert.deepEqual(await response.json(), { available: { youtube: false, exa: false, claude: true } });
   } finally { names.forEach((name, i) => { if (old[i] === undefined) delete process.env[name]; else process.env[name] = old[i]; }); }
 });
+
+test("project Anthropic credential wins over unrelated shell credentials", async () => {
+  const { anthropicApiKey } = await import("../lib/server/provider");
+  const project = process.env.INFINOTO_ANTHROPIC_API_KEY, shared = process.env.ANTHROPIC_API_KEY;
+  try {
+    process.env.INFINOTO_ANTHROPIC_API_KEY = " project-fixture "; process.env.ANTHROPIC_API_KEY = "foreign-shell-fixture";
+    assert.equal(anthropicApiKey(), "project-fixture");
+    delete process.env.INFINOTO_ANTHROPIC_API_KEY;
+    assert.equal(anthropicApiKey(), "foreign-shell-fixture");
+  } finally {
+    if (project === undefined) delete process.env.INFINOTO_ANTHROPIC_API_KEY; else process.env.INFINOTO_ANTHROPIC_API_KEY = project;
+    if (shared === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = shared;
+  }
+});

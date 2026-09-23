@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Resource } from "@/app/data";
+import { matchesSocialPlatform } from "@/lib/social";
 import { resourceRecordSchema } from "@/lib/resources";
 import { discoveryFilter, resourceFormat, type RecommendationFormat } from "@/lib/recommendations";
 import type { z } from "zod";
@@ -46,8 +47,9 @@ export function useTopicDiscovery(input: Input, format: RecommendationFormat, en
         if (!parsed.success) throw new Error("The source list was incomplete. Please retry.");
         if (controller.signal.aborted || activeKey.current !== key) return;
         const category = discoveryFilter(format).category;
-        const resources = parsed.data.filter(r => format === "All" ? r.type === category : resourceFormat(r) === format);
-        const summary = resources.length ? `${resources.length} ${refreshCount ? "new " : ""}sources found for this topic` : "No new matches. Try All levels or refine the search below.";
+        const requested = JSON.parse(body) as Input;
+        const resources = parsed.data.filter(r => (format === "All" ? r.type === category : resourceFormat(r) === format) && (format !== "Social" || matchesSocialPlatform(r.url, requested.socialPlatform)));
+        const summary = resources.length ? `${resources.length} ${refreshCount ? "new " : ""}sources found for this topic` : "No new matches. Try All levels or refine the search";
         const result = { resources, note: [summary, typeof raw.note === "string" ? raw.note : ""].filter(Boolean).join(". ") };
         if (!refreshCount) {
           if (cache.size >= 100) cache.delete(cache.keys().next().value!);
