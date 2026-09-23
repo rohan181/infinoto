@@ -65,8 +65,11 @@ test("live discovery routes to YouTube only, retains direct metadata, and respec
     assert.equal(response.status, 200);
     const data = await response.json(); assert.equal(data.provider, "youtube");
     assert.equal(data.resources.length, 2); assert.equal(calls, 2);
-    assert.equal(data.resources[0].author, "Creator A"); assert.equal(data.resources[0].youtube.durationSeconds, 600);
-    assert.equal(data.resources[1].level, "Not assessed");
+    const firstVideo = data.resources.find((r: { url: string }) => r.url.endsWith(a));
+    const secondVideo = data.resources.find((r: { url: string }) => r.url.endsWith(b));
+    assert.equal(firstVideo.author, "Creator A"); assert.equal(firstVideo.youtube.durationSeconds, 600);
+    assert.equal(secondVideo.level, "Not assessed");
+    assert.equal(data.resources[0].author, "Creator B", "explicit course evidence ranks above a generic title");
     assert.ok(data.resources.every((r: unknown) => resourceRecordSchema.safeParse(r).success));
     await discoverWithYouTube(input(), signal()); assert.equal(calls, 2, "repeated search uses metadata cache");
     assert.equal((await discoverWithYouTube(input({ excludeUrls: [`https://youtu.be/${a}`] }), signal())).resources.length, 1);
@@ -112,5 +115,21 @@ test("similar candidates exclude the starting creator, comparison has real evide
     await assert.rejects(getVideos([a], controller.signal)); assert.equal(calls, before);
     delete process.env.YOUTUBE_API_KEY;
     assert.equal((await compare(request({ action: "similar", videoId: a }))).status, 503);
+  } finally { globalThis.fetch = fetch; if (key === undefined) delete process.env.YOUTUBE_API_KEY; else process.env.YOUTUBE_API_KEY = key; }
+});
+
+test("find more excludes collected videos before applying creator diversity", async () => {
+  const fetch = globalThis.fetch, key = process.env.YOUTUBE_API_KEY;
+  process.env.YOUTUBE_API_KEY = "youtube-fixture-exclusions";
+  const ids = [a, same, unavailable];
+  globalThis.fetch = async url => {
+    const target = new URL(String(url));
+    if (target.pathname.endsWith("/search")) return Response.json({ items: ids.map(id => ({ id: { videoId: id } })) });
+    return Response.json({ items: ids.map(id => ({ id, snippet: { ...snippet(id), title: "Python tutorial" }, contentDetails: { duration: "PT10M" }, status: { privacyStatus: "public", uploadStatus: "processed" } })) });
+  };
+  try {
+    const result = await discoverWithYouTube(input({ excludeUrls: [`https://youtu.be/${a}`, `https://youtu.be/${same}`] }), signal());
+    assert.equal(result.resources.length, 1);
+    assert.ok(result.resources[0].url.endsWith(unavailable), "uncollected third video remains eligible");
   } finally { globalThis.fetch = fetch; if (key === undefined) delete process.env.YOUTUBE_API_KEY; else process.env.YOUTUBE_API_KEY = key; }
 });

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "./recommendations.css";
 import "./youtube.css";
+import "./library-refresh.css";
 
 export const metadata: Metadata = {
   title: "Infinity — Your curiosity, without limits.",

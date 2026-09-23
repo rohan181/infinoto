@@ -4,6 +4,7 @@ import type { Resource } from "@/app/data";
 import { canonicalUrl, resourceRequestSchema } from "@/lib/resources";
 import { compareCoverage, durationSeconds, formatDuration, parseChapters, titleDifficulty, videoIdSchema, videoUrl, type YouTubeVideo } from "@/lib/youtube";
 import { RequestError } from "./provider";
+import { diversify, searchSubject, topicRelevance } from "@/lib/topic-search";
 
 const snippetSchema = z.object({ title: z.string(), description: z.string().default(""), channelId: z.string().default(""), channelTitle: z.string().default(""), publishedAt: z.string().default("") });
 const responseSchema = z.object({ items: z.array(z.object({
@@ -17,7 +18,7 @@ const cache = new Map<string, { expires: number; data: YouTubeResponse }>();
 async function youtube(endpoint: "search" | "videos" | "channels" | "playlists", params: Record<string, string>, signal: AbortSignal): Promise<YouTubeResponse> {
   signal.throwIfAborted();
   const key = process.env.YOUTUBE_API_KEY;
-  if (!key) throw new RequestError("Add YOUTUBE_API_KEY to .env.local and restart the server to enable YouTube discovery and comparison.", 503);
+  if (!key) throw new RequestError("Add YOUTUBE_API_KEY to the server environment (.env.local locally or Vercel Project Settings → Environment Variables) and restart the server to enable YouTube discovery and comparison.", 503);
   const query = new URLSearchParams(params);
   const cacheKey = `${createHash("sha256").update(key).digest("hex").slice(0, 12)}:${endpoint}:${query}`;
   const hit = cache.get(cacheKey);
@@ -59,17 +60,24 @@ export async function getVideos(ids: string[], signal: AbortSignal): Promise<You
 
 export async function discoverWithYouTube(input: z.infer<typeof resourceRequestSchema>, signal: AbortSignal) {
   const kind = input.youtubeKind === "all" ? "video" : input.youtubeKind;
-  const query = `${input.topicTitle} ${input.pathTitle === input.topicTitle ? "" : input.pathTitle} ${input.level === "All levels" ? "" : input.level} ${kind === "channel" ? "tutorials" : kind === "playlist" ? "course" : "tutorial"}`.trim().slice(0, 240);
+  const subject = searchSubject(input);
+  const query = `${subject} ${input.level === "All levels" ? "" : input.level} ${kind === "channel" ? "education" : kind === "playlist" ? "course" : "tutorial explained"}`.trim().slice(0, 240);
   const search = await youtube("search", { part: "snippet", q: query, type: kind, maxResults: "20", order: "relevance" }, signal);
   const ids = search.items.flatMap(item => typeof item.id === "object" ? [item.id[`${kind}Id` as "videoId" | "channelId" | "playlistId"] || ""] : []).filter(Boolean);
   const excluded = new Set(input.excludeUrls.map(canonicalUrl));
   const checkedAt = new Date().toISOString();
   let resources: Resource[] = [];
   if (kind === "video") {
-    const videos = await getVideos(ids, signal);
+    const ranked = (await getVideos(ids, signal)).map(video => ({ video, score: topicRelevance(video.title, video.description, subject),
+      teaching: (/tutorial|course|explained|explanation|lesson|guide|examples?|from scratch/i.test(video.title) ? 2 : 0) + (video.chapters.length >= 3 ? 1 : 0) }))
+      .filter(({ video, score }) => video.durationSeconds >= 180 && score >= 1 && !excluded.has(canonicalUrl(videoUrl(video.id))) && (input.level === "All levels" || titleDifficulty(video.title) === input.level))
+      .sort((a, b) => (b.score + b.teaching) - (a.score + a.teaching));
+    const videos = diversify(ranked, item => item.video.channelId).map(item => item.video);
     resources = videos.map(v => {
       const url = videoUrl(v.id);
-      return { id: `youtube-video-${v.id}`, type: "YouTube", title: v.title, author: v.channelTitle, meta: formatDuration(v.durationSeconds), level: titleDifficulty(v.title), url, art: "linear", youtubeKind: "video", youtube: { channelId: v.channelId, durationSeconds: v.durationSeconds, publishedAt: v.publishedAt }, reason: "Matched to this topic by YouTube search. Compare the creator’s chapter list before choosing.", provenance: { kind: "web-search", provider: "youtube", sourceTitle: v.title, sourceUrl: url, checkedAt } };
+      const chapters = v.chapters.filter(c => !/intro|outro|subscribe|sponsor/i.test(c.title)).slice(0, 3);
+      const reason = chapters.length ? `Chapters include ${chapters.map(c => c.title).join(" · ")}.`.slice(0, 220) : `A ${Math.max(1, Math.round(v.durationSeconds / 60))}-minute lesson matched to ${input.focus || input.topicTitle}. Open the video to review its coverage.`;
+      return { id: `youtube-video-${v.id}`, type: "YouTube", title: v.title, author: v.channelTitle, meta: formatDuration(v.durationSeconds), level: titleDifficulty(v.title), url, art: "linear", youtubeKind: "video", youtube: { channelId: v.channelId, durationSeconds: v.durationSeconds, publishedAt: v.publishedAt }, reason, provenance: { kind: "web-search", provider: "youtube", sourceTitle: v.title, sourceUrl: url, checkedAt } };
     });
   } else if (ids.length) {
     const details = await youtube(kind === "channel" ? "channels" : "playlists", { part: kind === "channel" ? "snippet" : "snippet,contentDetails", id: ids.join(",") }, signal);

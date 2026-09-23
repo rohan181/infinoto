@@ -25,27 +25,29 @@ export async function readInput<T>(request: Request, schema: z.ZodType<T>, maxBy
   return parsed.data;
 }
 
-let windowStart = Date.now(), requests = 0, active = 0;
-export async function withClaude<T>(run: (client: Anthropic, model: string) => Promise<T>): Promise<T> {
-  if (!process.env.ANTHROPIC_API_KEY) throw new RequestError("Add a valid ANTHROPIC_API_KEY to .env.local to enable Claude.", 503);
-  return withRequestLimit(() => run(new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 110000, maxRetries: 0 }), process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6"));
+let windowStart = Date.now(), active = 0;
+const requests = { generation: 0, discovery: 0 };
+type RequestBucket = keyof typeof requests;
+export async function withClaude<T>(run: (client: Anthropic, model: string) => Promise<T>, bucket: RequestBucket = "generation"): Promise<T> {
+  if (!process.env.ANTHROPIC_API_KEY) throw new RequestError("Add a valid ANTHROPIC_API_KEY to the server environment (.env.local locally or Vercel Project Settings → Environment Variables) to enable Claude.", 503);
+  return withRequestLimit(() => run(new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 110000, maxRetries: 0 }), process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6"), bucket);
 }
 
 /** Shared across providers so switching engines cannot bypass local limits. */
-export async function withRequestLimit<T>(run: () => Promise<T>): Promise<T> {
-  if (Date.now() - windowStart > 3600000) { windowStart = Date.now(); requests = 0; }
-  if (requests >= 30) throw new RequestError("The hourly generation limit has been reached. Please try again later.", 429);
+export async function withRequestLimit<T>(run: () => Promise<T>, bucket: RequestBucket = "generation"): Promise<T> {
+  if (Date.now() - windowStart > 3600000) { windowStart = Date.now(); requests.generation = 0; requests.discovery = 0; }
+  if (requests[bucket] >= (bucket === "discovery" ? 120 : 30)) throw new RequestError(`The hourly ${bucket} limit has been reached. Please try again later.`, 429);
   if (active >= 2) throw new RequestError("Infinity is working on other requests. Please try again in a moment.", 429);
-  requests++; active++;
+  requests[bucket]++; active++;
   try { return await run(); }
   finally { active--; }
 }
 
 export function providerFailure(error: unknown): Response {
   if (error instanceof RequestError) return failure(error.message, error.status);
-  if (error instanceof Anthropic.AuthenticationError) return failure("Anthropic rejected the API key. Replace ANTHROPIC_API_KEY in .env.local with a valid key.", 401);
+  if (error instanceof Anthropic.AuthenticationError) return failure("Anthropic rejected the API key. Replace ANTHROPIC_API_KEY in the server environment (.env.local locally or Vercel Project Settings → Environment Variables) with a valid key.", 401);
   if (error instanceof Anthropic.PermissionDeniedError) return failure("Your Anthropic account does not have access to this model or web search.", 403);
-  if (error instanceof Anthropic.NotFoundError) return failure("The Claude model is unavailable. Check ANTHROPIC_MODEL in .env.local.", 503);
+  if (error instanceof Anthropic.NotFoundError) return failure("The Claude model is unavailable. Check ANTHROPIC_MODEL in the server environment (.env.local locally or Vercel Project Settings → Environment Variables).", 503);
   if (error instanceof Anthropic.RateLimitError) return failure("Claude is rate-limited. Please wait and retry.", 429);
   if (error instanceof Anthropic.BadRequestError) {
     if (/credit balance|billing|payment/i.test(error.message)) return failure("Your Anthropic account needs API credits. Add credits and retry.", 402);

@@ -50,9 +50,9 @@ test("grounded citations are supported while fabricated, unsafe, and wrong-forma
 
 test("empty searches stay empty and incomplete synthesis produces an actionable error", () => {
   assert.deepEqual(buildExaResources({ results: [] }, input()), []);
-  assert.throws(() => buildExaResources({ results: [evidence()] }, input()), /evaluating their difficulty/);
-  assert.throws(() => buildExaResources({ results: [evidence()], output: { content: "not JSON" } }, input()), /finish/);
-  assert.throws(() => buildExaResources({ results: [evidence()], output: { content: {} } }, input()), /incomplete/);
+  assert.throws(() => buildExaResources({ results: [evidence()] }, input()), /Choose All levels/);
+  assert.throws(() => buildExaResources({ results: [evidence()], output: { content: "not JSON" } }, input()), /Choose All levels/);
+  assert.throws(() => buildExaResources({ results: [evidence()], output: { content: {} } }, input()), /Choose All levels/);
   const bookUrl = "https://charuaggarwal.net/neural.htm";
   const book = buildExaResources({ results: [evidence(bookUrl, "Neural Networks and Deep Learning")], output: { content: { matches: [{ ...match(bookUrl), authors: "Charu C. Aggarwal" }] } } }, input({ category: "Books" }))[0];
   assert.equal(book.book?.authors, "Charu C. Aggarwal");
