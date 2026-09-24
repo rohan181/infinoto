@@ -133,3 +133,24 @@ test("find more excludes collected videos before applying creator diversity", as
     assert.ok(result.resources[0].url.endsWith(unavailable), "uncollected third video remains eligible");
   } finally { globalThis.fetch = fetch; if (key === undefined) delete process.env.YOUTUBE_API_KEY; else process.env.YOUTUBE_API_KEY = key; }
 });
+
+test("empty YouTube search recovers a short lesson with a simpler query, without caching the empty response", async () => {
+  const originalFetch = globalThis.fetch, key = process.env.YOUTUBE_API_KEY;
+  process.env.YOUTUBE_API_KEY = "youtube-retry-fixture";
+  const queries: string[] = [];
+  globalThis.fetch = async url => {
+    const target = new URL(String(url));
+    if (target.pathname.endsWith("/search")) {
+      const query = target.searchParams.get("q")!; queries.push(query);
+      return Response.json({ items: query.includes("tutorial explained") ? [] : [{ id: { videoId: a } }] });
+    }
+    return Response.json({ items: [{ id: a, snippet: snippet(a), contentDetails: { duration: "PT2M" }, status: { privacyStatus: "public", uploadStatus: "processed" } }] });
+  };
+  try {
+    const found = await discoverWithYouTube(input(), signal());
+    assert.equal(found.resources.length, 1); assert.equal(found.resources[0].youtube?.durationSeconds, 120);
+    assert.equal(queries.length, 2); assert.notEqual(queries[0], queries[1]);
+    await discoverWithYouTube(input(), signal());
+    assert.equal(queries.length, 3, "empty primary query is rechecked; successful fallback stays cached");
+  } finally { globalThis.fetch = originalFetch; if (key === undefined) delete process.env.YOUTUBE_API_KEY; else process.env.YOUTUBE_API_KEY = key; }
+});

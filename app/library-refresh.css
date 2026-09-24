@@ -149,3 +149,15 @@
 .kind-social .recommendation-art{background:radial-gradient(ellipse at top right,#9772bb55,transparent 65%),#252131}
 .kind-social .art-format{color:#e2cbfb;text-transform:uppercase}
 .kind-social .reading-art{color:#d0a8ef}
+
+/* Explain topic fit without presenting heuristic scores as quality ratings. */
+.recommendation-order { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 14px 0; }
+.recommendation-order p { margin: 0; color: var(--muted, #9ca3af); font-size: 12px; line-height: 1.6; }
+.recommendation-order label { display: grid; gap: 5px; flex-shrink: 0; }
+.recommendation-order label > span { font-size: 9px; color: #8f9aab; letter-spacing: .1em; }
+.recommendation-order select { max-width: 180px; background: #151b29; color: #dbe5f4; border: 1px solid #2a3448; border-radius: 8px; padding: 8px; font: inherit; font-size: 12px; }
+.recommendation-fit { display: grid; gap: 5px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #283244; }
+.recommendation-fit > span { display: flex; align-items: center; gap: 6px; color: #aebde1; font-size: 11px; line-height: 1.5; }
+.recommendation-fit small { color: #8f9aab; font-size: 10px; line-height: 1.5; }
+.recommendation-fit.start-here > span { color: #c1b2ff; font-weight: 700; }
+@media (max-width: 560px) { .recommendation-order { align-items: flex-start; flex-direction: column; } }

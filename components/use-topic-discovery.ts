@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Resource } from "@/app/data";
 import { matchesSocialPlatform } from "@/lib/social";
-import { resourceRecordSchema } from "@/lib/resources";
+import { fetchDiscovery } from "@/lib/discovery-fetch";
 import { discoveryFilter, resourceFormat, type RecommendationFormat } from "@/lib/recommendations";
 import type { z } from "zod";
 import type { resourceRequestSchema } from "@/lib/resources";
@@ -40,18 +40,14 @@ export function useTopicDiscovery(input: Input, format: RecommendationFormat, en
       if (controller.signal.aborted) return;
       const timeout = setTimeout(() => controller.abort("timeout"), 115000);
       try {
-        const response = await fetch("/api/resources", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...JSON.parse(body), excludeUrls: JSON.parse(excludeKey) }), signal: controller.signal });
-        const raw = await response.json();
-        if (!response.ok) throw new Error(raw.error || "Search couldn’t finish. Please retry.");
-        const parsed = resourceRecordSchema.array().max(6).safeParse(raw.resources);
-        if (!parsed.success) throw new Error("The source list was incomplete. Please retry.");
+        const raw = await fetchDiscovery({ ...JSON.parse(body), excludeUrls: JSON.parse(excludeKey) }, controller.signal);
         if (controller.signal.aborted || activeKey.current !== key) return;
         const category = discoveryFilter(format).category;
         const requested = JSON.parse(body) as Input;
-        const resources = parsed.data.filter(r => (format === "All" ? r.type === category : resourceFormat(r) === format) && (format !== "Social" || matchesSocialPlatform(r.url, requested.socialPlatform)));
+        const resources = raw.resources.filter(r => (format === "All" ? r.type === category : resourceFormat(r) === format) && (format !== "Social" || matchesSocialPlatform(r.url, requested.socialPlatform)));
         const summary = resources.length ? `${resources.length} ${refreshCount ? "new " : ""}sources found for this topic` : "No new matches. Try All levels or refine the search";
         const result = { resources, note: [summary, typeof raw.note === "string" ? raw.note : ""].filter(Boolean).join(". ") };
-        if (!refreshCount) {
+        if (!refreshCount && resources.length) {
           if (cache.size >= 100) cache.delete(cache.keys().next().value!);
           cache.set(key, { result, expires: Date.now() + 10 * 60 * 1000 });
         }

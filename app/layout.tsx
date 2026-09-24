@@ -5,6 +5,8 @@ import "./youtube.css";
 import "./library-refresh.css";
 import "./content-analysis.css";
 import "./graph-controls.css";
+import "./learn-next.css";
+import "./quiz.css";
 
 export const metadata: Metadata = {
   title: "Infinity — Your curiosity, without limits.",

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { diversify, searchSubject, topicRelevance } from "../lib/topic-search";
+import { diversify, fallbackSubject, searchSubject, selectedTopicRelevance, topicRelevance } from "../lib/topic-search";
 import { buildExaResources, exaSearchRequest } from "../lib/server/exa";
 import { isDirectResourceUrl, resourceRecordSchema, resourceRequestSchema } from "../lib/resources";
 
@@ -43,9 +43,20 @@ test("generated generic nodes search their concrete concepts", () => {
 
 
 test("blog recommendations exclude course exercises, documentation and forum answers", () => {
-  for (const url of ["https://developers.google.com/machine-learning/crash-course/neural-networks/interactive-exercises", "https://developer.mozilla.org/en-US/docs/Web/CSS/flex", "https://reddit.com/r/python/comments/example", "https://university.example/learning/courses/python"]) {
+  for (const url of ["https://doi.org/10.1000/research-paper", "https://pubmed.ncbi.nlm.nih.gov/12345678/", "https://developers.google.com/machine-learning/crash-course/neural-networks/interactive-exercises", "https://developer.mozilla.org/en-US/docs/Web/CSS/flex", "https://reddit.com/r/python/comments/example", "https://university.example/learning/courses/python"]) {
     assert.equal(isDirectResourceUrl(url, "Blogs"), false);
     assert.equal(isDirectResourceUrl(url, "Other"), true);
   }
   assert.equal(isDirectResourceUrl("https://victorzhou.com/blog/intro-to-neural-networks", "Blogs"), true);
+});
+
+test("recovery retains topic and focus, and path-only results cannot satisfy a node", () => {
+  const context = { topicTitle: "Mathematics", pathTitle: "Machine Learning", concepts: ["Linear algebra"] };
+  assert.equal(fallbackSubject(context), "Mathematics for Machine Learning");
+  assert.equal(selectedTopicRelevance("Machine learning roadmap", "Learn machine learning", context), 0);
+  assert.ok(selectedTopicRelevance("Mathematics explained", "", context) >= 1);
+  assert.equal(fallbackSubject({ ...context, focus: "Eigenvalues" }), "Eigenvalues");
+  const generic = { topicTitle: "Key techniques", pathTitle: "Photography", concepts: ["Exposure", "Composition"] };
+  assert.equal(fallbackSubject(generic), "Exposure for Photography");
+  assert.ok(selectedTopicRelevance("Exposure explained", "", generic) >= 1);
 });

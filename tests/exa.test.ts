@@ -107,3 +107,24 @@ test("Exa routing works without Claude, forwards cancellation, and never leaks p
     if (claudeKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = claudeKey;
   }
 });
+
+test("empty blog discovery retries a shorter topic query and remains bounded", async () => {
+  const originalFetch = globalThis.fetch, key = process.env.EXA_API_KEY;
+  process.env.EXA_API_KEY = "retry-fixture";
+  const queries: string[] = [];
+  let empty = false;
+  globalThis.fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body)); queries.push(body.query);
+    assert.match(body.query, /Python generators/);
+    assert.match(body.systemPrompt, /Advanced/);
+    return Response.json(empty || queries.length === 1 ? { results: [] } : result());
+  };
+  try {
+    const found = await discoverWithExa(input(), new AbortController().signal);
+    assert.equal(found.resources.length, 1); assert.equal(queries.length, 2);
+    assert.notEqual(queries[0], queries[1]); assert.match(found.note, /simpler topic search/);
+    empty = true;
+    assert.equal((await discoverWithExa(input(), new AbortController().signal)).resources.length, 0);
+    assert.equal(queries.length, 4, "only two attempts per empty search");
+  } finally { globalThis.fetch = originalFetch; if (key === undefined) delete process.env.EXA_API_KEY; else process.env.EXA_API_KEY = key; }
+});

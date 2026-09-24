@@ -1,5 +1,5 @@
 import type { Difficulty, Resource, ResourceType, Topic } from "@/app/data";
-import { mergeResources, resourceRecordSchema, youtubeKindForUrl } from "./resources";
+import { mergeResources, resourceRecordSchema, sourceAuthor, youtubeKindForUrl } from "./resources";
 
 // Direct source pages reviewed on 21 September 2026. These are a small starter
 // library, distinct from live recommendations returned by /api/resources.
@@ -93,6 +93,6 @@ export function resourcesForTopic(topic: Topic, pathTitle = ""): Resource[] {
     .filter(item => item.direct > 0 || item.broader > 0)
     .sort((a, b) => b.direct - a.direct || b.broader - a.broader);
   const starter = ranked.map(({ resource, direct }): Resource => ({ ...resource, matchContext: direct ? "topic" : "path" }));
-  const discovered = (topic.resources || []).filter(r => resourceRecordSchema.safeParse(r).success).map(r => ({ ...r, matchContext: "topic" as const }));
+  const discovered = (topic.resources || []).filter(r => resourceRecordSchema.safeParse(r).success).map(r => ({ ...r, author: sourceAuthor(r.author, new URL(r.url).hostname), matchContext: "topic" as const }));
   return mergeResources(starter, discovered);
 }
