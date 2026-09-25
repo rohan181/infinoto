@@ -22,15 +22,6 @@ export function filterRecommendations(resources: Resource[], format: Recommendat
       || Number(b.provenance?.kind === "web-search") - Number(a.provenance?.kind === "web-search")
       || (a.provenance?.kind === "web-search" && b.provenance?.kind === "web-search" ? b.provenance.checkedAt.localeCompare(a.provenance.checkedAt) : 0));
 }
-export function balanceFormats(resources: Resource[]): Resource[] {
-  const distribute = (items: Resource[]) => {
-    const queues = formats.filter(f => f !== "All").map(format => items.filter(r => resourceFormat(r) === format));
-    const result: Resource[] = [];
-    while (queues.some(q => q.length)) for (const queue of queues) { const item = queue.shift(); if (item) result.push(item); }
-    return result;
-  };
-  return [...distribute(resources.filter(r => r.matchContext !== "path")), ...distribute(resources.filter(r => r.matchContext === "path"))];
-}
 export function isResourceSaved(resources: Resource[], pathId: string, resource: Resource): boolean {
   return resources.some(item => item.id.startsWith(`${pathId}:`) && (item.id === `${pathId}:${resource.id}` || (item.type === resource.type && canonicalUrl(item.url) === canonicalUrl(resource.url))));
 }

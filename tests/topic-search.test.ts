@@ -10,6 +10,7 @@ test("selected topics drive searches, while generic labels retain necessary cont
   assert.equal(searchSubject({ ...context, topicTitle: "Neural networks" }), "Neural networks");
   assert.equal(searchSubject({ ...context, topicTitle: "Mathematics" }), "Mathematics for Machine Learning");
   assert.equal(searchSubject({ ...context, topicTitle: "Python programming", focus: "Python generators" }), "Python generators");
+  assert.equal(searchSubject({ ...context, topicTitle: "Python generators", focus: "yield" }), "yield for Python generators");
 });
 
 test("topic relevance prefers direct lessons and creator diversity limits repetition", () => {
@@ -43,7 +44,7 @@ test("generated generic nodes search their concrete concepts", () => {
 
 
 test("blog recommendations exclude course exercises, documentation and forum answers", () => {
-  for (const url of ["https://doi.org/10.1000/research-paper", "https://pubmed.ncbi.nlm.nih.gov/12345678/", "https://developers.google.com/machine-learning/crash-course/neural-networks/interactive-exercises", "https://developer.mozilla.org/en-US/docs/Web/CSS/flex", "https://reddit.com/r/python/comments/example", "https://university.example/learning/courses/python"]) {
+  for (const url of ["https://github.com/teacher/math/blob/main/calculus.ipynb", "https://colab.research.google.com/drive/notebook", "https://doi.org/10.1000/research-paper", "https://pubmed.ncbi.nlm.nih.gov/12345678/", "https://developers.google.com/machine-learning/crash-course/neural-networks/interactive-exercises", "https://developer.mozilla.org/en-US/docs/Web/CSS/flex", "https://reddit.com/r/python/comments/example", "https://university.example/learning/courses/python"]) {
     assert.equal(isDirectResourceUrl(url, "Blogs"), false);
     assert.equal(isDirectResourceUrl(url, "Other"), true);
   }
@@ -55,7 +56,7 @@ test("recovery retains topic and focus, and path-only results cannot satisfy a n
   assert.equal(fallbackSubject(context), "Mathematics for Machine Learning");
   assert.equal(selectedTopicRelevance("Machine learning roadmap", "Learn machine learning", context), 0);
   assert.ok(selectedTopicRelevance("Mathematics explained", "", context) >= 1);
-  assert.equal(fallbackSubject({ ...context, focus: "Eigenvalues" }), "Eigenvalues");
+  assert.equal(fallbackSubject({ ...context, focus: "Eigenvalues" }), "Eigenvalues for Mathematics for Machine Learning");
   const generic = { topicTitle: "Key techniques", pathTitle: "Photography", concepts: ["Exposure", "Composition"] };
   assert.equal(fallbackSubject(generic), "Exposure for Photography");
   assert.ok(selectedTopicRelevance("Exposure explained", "", generic) >= 1);

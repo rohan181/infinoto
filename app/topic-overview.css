@@ -1,0 +1,25 @@
+.topic-overview{margin:0 22px 18px;padding:19px 20px;border:1px solid #a395f92a;border-radius:12px;background:linear-gradient(120deg,#25203580,#15151f);min-width:0}
+.overview-header{display:flex;align-items:center;gap:11px;margin-bottom:13px}
+.overview-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:9px;background:#a395f914;color:#bcadff;flex-shrink:0}
+.overview-header h3{font-size:13px;font-weight:600;color:#e0d8f6}
+.overview-header p{font-size:10px;line-height:1.6;margin-top:3px;color:#a69ab7;overflow-wrap:anywhere}
+.overview-summary,.overview-content p{font-size:12px;line-height:1.85;color:#bdb4cb;white-space:pre-wrap;overflow-wrap:anywhere}
+.overview-details{border-top:1px solid #a395f918;margin-top:15px}
+.overview-details summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:13px;font-size:11px;color:#c8bafa;cursor:pointer;list-style:none}
+.overview-details summary::-webkit-details-marker{display:none}
+.overview-details summary:focus-visible{outline:2px solid var(--purple);outline-offset:4px}
+.overview-details[open] summary svg{transform:rotate(180deg)}
+.overview-content h4{font-size:12px;color:#e0d8f6;margin:18px 0 7px;font-weight:600}
+.overview-content ul{padding-left:18px;margin:9px 0}
+.overview-content li{font-size:12px;color:#a995db;padding-left:4px;margin:12px 0}
+.overview-content li strong{font-size:12px;color:#d9cfe7;font-weight:550}
+.overview-content li p{margin-top:4px}
+.overview-example{margin-top:18px;padding:14px;border:1px solid #a395f91a;border-radius:9px;background:#a395f906}
+.overview-example>span{display:flex;align-items:center;gap:7px;color:#b9a5e8;font-size:10px}
+.overview-example h4{margin-top:10px}
+.overview-loading{display:flex;align-items:center;gap:10px;color:#b3a2d3;min-height:42px}
+.overview-loading p{font-size:11px;line-height:1.7;flex:1}
+.overview-loading button{font-size:11px;color:#d0bce8;padding:6px}
+.overview-error p{font-size:11px;color:#d3a8b0;line-height:1.7;margin-bottom:12px;overflow-wrap:anywhere}
+.overview-note{font-size:9px;line-height:1.65;color:#9386a5;margin-top:12px}
+@media(max-width:600px){.topic-overview{margin:0 14px 16px;padding:16px}.overview-summary,.overview-content p{font-size:12px}}

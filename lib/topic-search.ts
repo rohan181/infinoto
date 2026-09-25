@@ -10,6 +10,10 @@ export function concreteConcepts(input: TopicContext): string[] {
 export function topicTerms(title: string): string[] { return [...new Set(words(title).filter(w => !generic.has(w)))]; }
 export function searchSubject(input: TopicContext): string {
   const title = input.focus?.trim() || input.topicTitle.trim();
+  if (input.focus?.trim() && topicRelevance("", title, input.topicTitle) < 0.99) {
+    const parent = searchSubject({ ...input, focus: "" });
+    return `${title} for ${parent}`;
+  }
   // Generated roadmap labels need their actual concepts to become useful queries.
   if (genericLabel.test(title) && concreteConcepts(input).length) {
     return `${concreteConcepts(input).slice(0, 2).join(" ")} for ${input.pathTitle}`;
@@ -36,6 +40,13 @@ export function selectedTopicRelevance(title: string, description: string, input
     return coverage >= 0.67 ? topicRelevance(title, description, value) : 0;
   }));
 }
+/** An incidental excerpt mention must also agree with the assessed learning outcome. */
+export function lessonRelevance(title: string, excerpt: string, input: TopicContext, outcome?: string): number {
+  const relevance = selectedTopicRelevance(title, excerpt, input);
+  if (relevance >= 1 && outcome && selectedTopicRelevance(title, "", input) === 0
+    && selectedTopicRelevance("", outcome, input) === 0) return 0;
+  return relevance;
+}
 export function topicRelevance(title: string, description: string, topic: string): number {
   const terms = topicTerms(topic);
   if (!terms.length) return 1;
@@ -44,6 +55,14 @@ export function topicRelevance(title: string, description: string, topic: string
   const inTitle = terms.filter(t => matches(t, titleWords)).length / terms.length;
   const inBody = terms.filter(t => matches(t, content)).length / terms.length;
   return inTitle * 4 + inBody;
+}
+/** Preserve relevant source lines beyond a long introduction, without inventing evidence. */
+export function topicExcerpt(description: string, input: TopicContext): string {
+  const subjects = [input.focus?.trim() || input.topicTitle, ...(input.focus?.trim() ? [] : concreteConcepts(input))];
+  const lines = description.split(/\n+/).map(line => line.trim()).filter(Boolean);
+  const ranked = lines.map((line, index) => ({ line, index, score: Math.max(...subjects.map(subject => topicRelevance("", line, subject))) }))
+    .filter(item => item.score > 0).sort((a, b) => b.score - a.score || a.index - b.index);
+  return [...new Set([...ranked.map(item => item.line), ...lines])].join("\n").slice(0, 1600);
 }
 export function diversify<T>(items: T[], key: (item: T) => string, maxPerSource = 2): T[] {
   const counts = new Map<string, number>();

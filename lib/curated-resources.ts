@@ -1,5 +1,6 @@
 import type { Difficulty, Resource, ResourceType, Topic } from "@/app/data";
 import { mergeResources, resourceRecordSchema, sourceAuthor, youtubeKindForUrl } from "./resources";
+import { lessonRelevance, selectedTopicRelevance } from "./topic-search";
 
 // Direct source pages reviewed on 21 September 2026. These are a small starter
 // library, distinct from live recommendations returned by /api/resources.
@@ -92,7 +93,12 @@ export function resourcesForTopic(topic: Topic, pathTitle = ""): Resource[] {
   const ranked = curatedLibrary.map(resource => ({ resource, direct: score(resource, topic.title, topic.concepts), broader: score(resource, pathTitle, []) }))
     .filter(item => item.direct > 0 || item.broader > 0)
     .sort((a, b) => b.direct - a.direct || b.broader - a.broader);
-  const starter = ranked.map(({ resource, direct }): Resource => ({ ...resource, matchContext: direct ? "topic" : "path" }));
-  const discovered = (topic.resources || []).filter(r => resourceRecordSchema.safeParse(r).success).map(r => ({ ...r, author: sourceAuthor(r.author, new URL(r.url).hostname), matchContext: "topic" as const }));
+  const context = { topicTitle: topic.title, concepts: topic.concepts, pathTitle };
+  const starter = ranked.map(({ resource, direct }): Resource => ({ ...resource, matchContext: direct
+    && selectedTopicRelevance(resource.title, resource.reason || "", context) >= 1 ? "topic" : "path" }));
+  const discovered = (topic.resources || []).filter(r => resourceRecordSchema.safeParse(r).success).map((r): Resource => ({ ...r,
+    author: sourceAuthor(r.author, new URL(r.url).hostname),
+    matchContext: (r.type === "Blogs" || (r.type === "YouTube" && youtubeKindForUrl(r.url) === "video"))
+      && lessonRelevance(r.title, r.sourceExcerpt || "", context, r.reason) < 1 ? "path" : "topic" }));
   return mergeResources(starter, discovered);
 }

@@ -25,7 +25,7 @@ export function useTopicDiscovery(input: Input, format: RecommendationFormat, en
   const [state, setState] = useState<State>({ key: "", phase: "loading", error: "", note: "" });
   const pending = useRef<{ controller: AbortController; timer: ReturnType<typeof setTimeout> } | null>(null);
   const refreshCount = attempt.key === key ? attempt.count : 0;
-  const excludeKey = JSON.stringify(attempt.key === key ? attempt.excludeUrls : []);
+  const excludeKey = JSON.stringify(attempt.key === key ? attempt.excludeUrls : input.excludeUrls);
   useEffect(() => {
     if (!enabled) return;
     const hit = cache.get(key);
@@ -57,7 +57,10 @@ export function useTopicDiscovery(input: Input, format: RecommendationFormat, en
         if (activeKey.current !== key) return;
         if (controller.signal.aborted && controller.signal.reason !== "timeout") return;
         setState({ key, phase: "error", error: controller.signal.aborted ? "Search took too long. Try a more focused topic." : error instanceof Error ? error.message : "Could not reach search. Please retry.", note: "" });
-      } finally { clearTimeout(timeout); }
+      } finally {
+        clearTimeout(timeout);
+        if (pending.current?.controller === controller) pending.current = null;
+      }
     }, 450);
     pending.current = { controller, timer };
     return () => { clearTimeout(timer); controller.abort(); pending.current = null; };

@@ -161,3 +161,5 @@
 .recommendation-fit small { color: #8f9aab; font-size: 10px; line-height: 1.5; }
 .recommendation-fit.start-here > span { color: #c1b2ff; font-weight: 700; }
 @media (max-width: 560px) { .recommendation-order { align-items: flex-start; flex-direction: column; } }
+
+.recommendation-focus{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:0 0 15px}.recommendation-focus>span{font-size:9px;letter-spacing:1px;color:#9485a6;margin-right:4px}.recommendation-focus button{font-size:11px;line-height:1.5;padding:6px 10px;border:1px solid #76608940;border-radius:16px;color:#b9adca;text-align:left;overflow-wrap:anywhere}.recommendation-focus button:hover{border-color:#a395f980}.recommendation-focus button[aria-pressed=true]{background:#a395f91c;color:#e0d2fc;border-color:#a395f970}

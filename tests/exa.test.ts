@@ -5,9 +5,9 @@ import { resourceRecordSchema, resourceRequestSchema } from "../lib/resources";
 import { buildExaResources, discoverWithExa, exaSearchRequest } from "../lib/server/exa";
 
 const input = (extra: object = {}) => resourceRequestSchema.parse({ provider: "exa", pathTitle: "Python", topicTitle: "Python generators", category: "Blogs", level: "Advanced", ...extra });
-const article = "https://realpython.com/python-gil/";
-const match = (url = article, level = "Advanced") => ({ url, level, reason: "Requires confident Python and concurrency fundamentals.", authors: "Real Python" });
-const evidence = (url = article, title = "Retrieved article title") => ({ url, title, highlights: ["Python concurrency and the GIL"] });
+const article = "https://realpython.com/introduction-to-python-generators/";
+const match = (url = article, level = "Advanced") => ({ url, level, reason: "Requires confident Python and iteration fundamentals.", authors: "Real Python" });
+const evidence = (url = article, title = "Python generators explained") => ({ url, title, highlights: ["Python generators, yield and lazy iteration"] });
 const result = () => ({ results: [evidence()], output: { content: { matches: [match()] }, grounding: [] } });
 const request = (body: unknown, origin = "http://localhost:3000") => new Request("http://localhost:3000/api/resources", { method: "POST", headers: { "Content-Type": "application/json", origin }, body: JSON.stringify(body) });
 
@@ -26,10 +26,10 @@ test("Exa cards use evidence URLs and titles, requested levels, and provider pro
   const raw = result();
   raw.output.content.matches.push(match(), match("https://invented.example/article"), match(article, "Beginner"));
   const cards = buildExaResources(raw, input());
-  assert.equal(cards.length, 1); assert.equal(cards[0].title, "Retrieved article title");
+  assert.equal(cards.length, 1); assert.equal(cards[0].title, "Python generators explained");
   assert.equal(cards[0].provenance?.provider, "exa"); assert.equal(cards[0].level, "Advanced");
   assert.ok(resourceRecordSchema.safeParse(cards[0]).success);
-  assert.deepEqual(buildExaResources(raw, input({ excludeUrls: ["https://www.realpython.com/python-gil?utm_source=test"] })), []);
+  assert.deepEqual(buildExaResources(raw, input({ excludeUrls: ["https://www.realpython.com/introduction-to-python-generators?utm_source=test"] })), []);
   assert.deepEqual(buildExaResources({ ...result(), output: { content: { matches: [match(article, "Beginner")] } } }, input()), []);
   assert.equal(buildExaResources({ ...result(), output: { content: JSON.stringify(result().output.content) } }, input()).length, 1);
 });
@@ -82,17 +82,19 @@ test("Exa routing works without Claude, forwards cancellation, and never leaks p
     assert.equal(found.status, 200); assert.equal(data.provider, "exa");
     assert.equal(data.resources[0].provenance.provider, "exa"); assert.equal(calls, 1);
     assert.ok(!JSON.stringify(data).includes("test-exa-secret"));
+    assert.equal((await POST(request(input()))).status, 200);
+    assert.equal(calls, 1, "repeat discovery reuses the successful result");
     // Explicit Claude selection is not silently replaced with Exa.
     assert.equal((await POST(request({ ...input(), provider: "claude" }))).status, 503);
     assert.equal(calls, 1);
     for (const failure of [401, 402, 403, 429, 500]) {
       status = failure;
-      const response = await POST(request(input())); const error = await response.text();
+      const response = await POST(request(input({ focus: `failure ${failure}` }))); const error = await response.text();
       assert.equal(response.status, failure === 500 ? 502 : failure);
       assert.match(error, /Exa/); assert.ok(!error.includes("test-exa-secret"));
     }
     status = 200; unreadable = true;
-    assert.equal((await POST(request(input()))).status, 502); unreadable = false;
+    assert.equal((await POST(request(input({ focus: "unreadable response" })))).status, 502); unreadable = false;
     const controller = new AbortController(); controller.abort();
     await assert.rejects(discoverWithExa(input(), controller.signal), /stopped or timed out/);
     assert.equal(observedSignal, controller.signal);
@@ -106,6 +108,20 @@ test("Exa routing works without Claude, forwards cancellation, and never leaks p
     if (exaKey === undefined) delete process.env.EXA_API_KEY; else process.env.EXA_API_KEY = exaKey;
     if (claudeKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = claudeKey;
   }
+});
+
+test("malformed neighbors do not discard valid search evidence or assessed matches", () => {
+  const raw = result();
+  const cards = buildExaResources({
+    results: [...raw.results, { title: "Missing URL" }],
+    output: { content: { matches: [...raw.output.content.matches, { url: article, level: "invalid" }] }, grounding: [{ citations: [null] }] },
+  }, input());
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].level, "Advanced");
+  assert.ok(resourceRecordSchema.safeParse(cards[0]).success);
+  const fallback = buildExaResources({ results: [evidence(article, "Python generators explained"), null] }, input({ level: "All levels" }));
+  assert.equal(fallback.length, 1);
+  assert.equal(fallback[0].level, "Not assessed");
 });
 
 test("empty blog discovery retries a shorter topic query and remains bounded", async () => {

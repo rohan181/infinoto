@@ -16,6 +16,33 @@ test("temporary discovery errors retry once; valid cards survive a malformed nei
   } finally { globalThis.fetch = original; }
 });
 
+test("unreadable successes and temporary 500s recover without exposing HTML errors", async () => {
+  const original = globalThis.fetch;
+  try {
+    for (const first of [new Response("<html>Gateway failure</html>"), new Response("upstream failed", { status: 500 }), Response.json(null)]) {
+      let calls = 0;
+      globalThis.fetch = async () => ++calls === 1 ? first : Response.json({ resources: [source] });
+      assert.equal((await fetchDiscovery(input, new AbortController().signal)).resources.length, 1);
+      assert.equal(calls, 2);
+    }
+    globalThis.fetch = async () => new Response("<html>Private server details</html>", { status: 503 });
+    await assert.rejects(fetchDiscovery(input, new AbortController().signal), /^Error: Search couldn’t finish/);
+  } finally { globalThis.fetch = original; }
+});
+
+test("cancelling during retry backoff does not send a second request", async () => {
+  const original = globalThis.fetch;
+  const controller = new AbortController();
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return Response.json({}, { status: 502 }); };
+  try {
+    const pending = fetchDiscovery(input, controller.signal);
+    setTimeout(() => controller.abort(), 10);
+    await assert.rejects(pending, { name: "AbortError" });
+    assert.equal(calls, 1);
+  } finally { globalThis.fetch = original; }
+});
+
 test("quota and credential errors do not retry; failed network retries are bounded", async () => {
   const original = globalThis.fetch;
   try {

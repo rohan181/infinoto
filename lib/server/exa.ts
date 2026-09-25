@@ -15,11 +15,12 @@ const matchesSchema = z.object({ matches: z.array(z.object({
   authors: z.string().max(160).nullable(),
 })).max(6) });
 const citationSchema = z.object({ url: z.string(), title: z.string().nullish() });
+const resultSchema = citationSchema.extend({ highlights: z.array(z.string()).nullish(), author: z.string().nullish() });
 const responseSchema = z.object({
-  results: z.array(citationSchema.extend({ highlights: z.array(z.string()).nullish(), author: z.string().nullish() })).max(100),
+  results: z.array(z.unknown()).max(100),
   output: z.object({
     content: z.unknown(),
-    grounding: z.array(z.object({ citations: z.array(citationSchema).default([]) })).nullish(),
+    grounding: z.array(z.object({ citations: z.array(z.unknown()).default([]) })).nullish().catch([]),
   }).nullish(),
 });
 
@@ -38,11 +39,12 @@ export function exaSearchRequest(input: DiscoveryInput, fallback = false) {
   const formatRule = input.category === "YouTube"
     ? `Use direct YouTube ${input.youtubeKind === "channel" ? "/@handle or /channel/UC... channel URLs, not videos or playlists" : input.youtubeKind === "playlist" ? "/playlist?list=... playlist URLs, not channels or videos" : input.youtubeKind === "video" ? "/watch?v=... video URLs, not channels or playlists" : "watch, playlist, or channel URLs"}.`
     : input.category === "Books" ? "Select actual book reference pages, not reviews, recommendations lists, or search pages. Name authors only when supported by the source. Do not invent chapter numbers or editions."
-    : input.category === "Blogs" ? "Select original article pages, not homepages, course landing pages, link roundups, forums, or videos. Prefer focused tutorials and technical essays."
+    : input.category === "Blogs" ? "Select original article pages, not homepages, course landing pages, link roundups, forums, videos, code repositories, or notebooks. Prefer focused tutorials and technical essays."
     : input.category === "Social" ? "Select relevant public posts, discussions, communities, or educational creator profiles on the requested social platforms. Prefer posts that explain the topic. Use only direct links, never search, login, or redirect pages. Do not invent follower counts, likes, verification status, or claims that content is accessible. Return fewer results if evidence is limited."
     : "Select direct educational source pages, not search pages or link roundups.";
   const queryFormat = fallback
-    ? input.category === "Blogs" ? "article tutorial" : input.category === "YouTube" ? `YouTube ${input.youtubeKind === "all" ? "video" : input.youtubeKind}` : format
+    ? input.category === "Blogs" ? "article guide examples" : input.category === "YouTube" ? `YouTube ${input.youtubeKind === "all" ? "video" : input.youtubeKind}` : format
+    : input.category === "Blogs" ? "tutorial worked examples"
     : input.category === "Social" ? "explanations tutorials practical tips" : format;
   return {
     query: [fallback ? fallbackSubject(input) : searchSubject(input), input.level === "All levels" ? fallback ? "" : input.topicDifficulty?.toLowerCase() : input.level.toLowerCase(), queryFormat].filter(Boolean).join(" "),
@@ -66,7 +68,11 @@ Omit duplicates and previously collected URLs: ${JSON.stringify(input.excludeUrl
 export function buildExaResources(raw: unknown, input: DiscoveryInput) {
   const parsed = responseSchema.safeParse(raw);
   if (!parsed.success) throw new RequestError("Exa returned an incomplete search response. Please retry.", 502);
-  const { results, output } = parsed.data;
+  const { output } = parsed.data;
+  const results = parsed.data.results.flatMap(item => {
+    const result = resultSchema.safeParse(item);
+    return result.success ? [result.data] : [];
+  });
   const fallback = (): Resource[] => {
     if (!results.length) return [];
     if (input.level !== "All levels") throw new RequestError("Pages were found, but their difficulty could not be assessed. Choose All levels to see the retrieved sources.", 502);
@@ -86,21 +92,30 @@ export function buildExaResources(raw: unknown, input: DiscoveryInput) {
     try { content = JSON.parse(content); }
     catch { return fallback(); }
   }
-  const ranked = matchesSchema.safeParse(content);
-  if (!ranked.success) return fallback();
+  const envelope = z.object({ matches: z.array(z.unknown()).max(100) }).safeParse(content);
+  if (!envelope.success) return fallback();
+  const ranked = envelope.data.matches.flatMap(item => {
+    const match = matchesSchema.shape.matches.element.safeParse(item);
+    return match.success ? [match.data] : [];
+  });
+  if (envelope.data.matches.length && !ranked.length) return fallback();
   const excluded = new Set(input.excludeUrls.map(canonicalUrl));
   const sources = new Map<string, SourceRecord>();
   // Grounding can reference additional pages discovered during synthesis.
-  const evidence = [...results, ...(output.grounding || []).flatMap(g => g.citations)];
+  const citations = (output.grounding || []).flatMap(g => g.citations).flatMap(item => {
+    const citation = citationSchema.safeParse(item);
+    return citation.success ? [citation.data] : [];
+  });
+  const evidence = [...results, ...citations];
   for (const item of evidence) {
     const url = canonicalUrl(item.url);
     if (!url || !item.title?.trim() || excluded.has(url) || sources.has(url) || (!isDirectResourceUrl(url, input.category, input.youtubeKind) || (input.category === "Social" && !matchesSocialPlatform(url, input.socialPlatform)))) continue;
     sources.set(url, { id: sources.size, url, title: item.title.slice(0, 220), excerpt: "highlights" in item && Array.isArray(item.highlights) ? item.highlights.join(" ").slice(0, 1600) : "" });
   }
-  const matches = ranked.data.matches.flatMap(match => {
+  const matches = ranked.flatMap(match => {
     const source = sources.get(canonicalUrl(match.url) || "");
     return source ? [{ sourceId: source.id, level: match.level, reason: match.reason, authors: match.authors, publisher: null, year: null, isbn: null }] : [];
-  });
+  }).slice(0, 6);
   const cards = buildSourceResources({ resources: matches }, [...sources.values()], { ...input, provider: "exa" });
   return input.category === "YouTube" || (input.category === "Social" && input.socialPlatform && input.socialPlatform !== "All") ? cards : diversify(cards, r => new URL(r.url).hostname);
 }

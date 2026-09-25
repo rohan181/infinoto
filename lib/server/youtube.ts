@@ -5,7 +5,7 @@ import { canonicalUrl, resourceRequestSchema } from "@/lib/resources";
 import { compareCoverage, durationSeconds, formatDuration, parseChapters, titleDifficulty, videoIdSchema, videoUrl, type YouTubeVideo } from "@/lib/youtube";
 import { recommendationFit } from "@/lib/recommendation-ranking";
 import { RequestError } from "./provider";
-import { diversify, fallbackSubject, searchSubject, selectedTopicRelevance } from "@/lib/topic-search";
+import { diversify, fallbackSubject, searchSubject, selectedTopicRelevance, topicExcerpt, topicRelevance } from "@/lib/topic-search";
 
 const snippetSchema = z.object({ title: z.string(), description: z.string().default(""), channelId: z.string().default(""), channelTitle: z.string().default(""), publishedAt: z.string().default("") });
 const responseSchema = z.object({ items: z.array(z.object({
@@ -70,16 +70,17 @@ async function discoverYouTubeQuery(input: z.infer<typeof resourceRequestSchema>
   let resources: Resource[] = [];
   if (kind === "video") {
     const ranked = (await getVideos(ids, signal)).map(video => ({ video, score: selectedTopicRelevance(video.title, video.description, input),
-      fitScore: input.topicDifficulty ? recommendationFit({ id: video.id, type: "YouTube", title: video.title, author: video.channelTitle, meta: "", level: titleDifficulty(video.title), url: videoUrl(video.id), art: "", sourceExcerpt: video.description.slice(0, 1600) }, { ...input, difficulty: input.topicDifficulty }).score : 0,
+      fitScore: input.topicDifficulty ? recommendationFit({ id: video.id, type: "YouTube", title: video.title, author: video.channelTitle, meta: "", level: titleDifficulty(video.title), url: videoUrl(video.id), art: "", sourceExcerpt: topicExcerpt(video.description, input) }, { ...input, difficulty: input.level === "All levels" ? input.topicDifficulty : input.level }).score : 0,
       teaching: (/tutorial|course|explained|explanation|lesson|guide|examples?|from scratch/i.test(video.title) ? 2 : 0) + (video.chapters.length >= 3 ? 1 : 0) }))
       .filter(({ video, score }) => video.durationSeconds >= 60 && score >= 1 && !excluded.has(canonicalUrl(videoUrl(video.id))) && (input.level === "All levels" || titleDifficulty(video.title) === input.level))
       .sort((a, b) => (b.score + b.teaching + b.fitScore) - (a.score + a.teaching + a.fitScore));
     const videos = diversify(ranked, item => item.video.channelId).map(item => item.video);
     resources = videos.map(v => {
       const url = videoUrl(v.id);
-      const chapters = v.chapters.filter(c => !/intro|outro|subscribe|sponsor/i.test(c.title)).slice(0, 3);
+      const chapters = v.chapters.filter(c => !/intro|outro|subscribe|sponsor/i.test(c.title))
+        .sort((a, b) => topicRelevance(b.title, "", subject) - topicRelevance(a.title, "", subject)).slice(0, 3);
       const reason = chapters.length ? `Chapters include ${chapters.map(c => c.title).join(" · ")}.`.slice(0, 220) : `A ${Math.max(1, Math.round(v.durationSeconds / 60))}-minute lesson matched to ${input.focus || input.topicTitle}. Open the video to review its coverage.`;
-      return { id: `youtube-video-${v.id}`, type: "YouTube", title: v.title, author: v.channelTitle, meta: formatDuration(v.durationSeconds), level: titleDifficulty(v.title), url, art: "linear", youtubeKind: "video", youtube: { channelId: v.channelId, durationSeconds: v.durationSeconds, publishedAt: v.publishedAt }, reason, sourceExcerpt: v.description.slice(0, 1600), provenance: { kind: "web-search", provider: "youtube", sourceTitle: v.title, sourceUrl: url, checkedAt } };
+      return { id: `youtube-video-${v.id}`, type: "YouTube", title: v.title, author: v.channelTitle, meta: formatDuration(v.durationSeconds), level: titleDifficulty(v.title), url, art: "linear", youtubeKind: "video", youtube: { channelId: v.channelId, durationSeconds: v.durationSeconds, publishedAt: v.publishedAt }, reason, sourceExcerpt: topicExcerpt(v.description, input), provenance: { kind: "web-search", provider: "youtube", sourceTitle: v.title, sourceUrl: url, checkedAt } };
     });
   } else if (ids.length) {
     const details = await youtube(kind === "channel" ? "channels" : "playlists", { part: kind === "channel" ? "snippet" : "snippet,contentDetails", id: ids.join(",") }, signal);

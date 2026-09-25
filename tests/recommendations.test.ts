@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ContentBlock } from "@anthropic-ai/sdk/resources/messages";
+import { rankRecommendations } from "../lib/recommendation-ranking";
 import { createPath } from "../app/data";
 import { curatedLibrary, resourcesForTopic } from "../lib/curated-resources";
-import { balanceFormats, discoveryFilter, filterRecommendations, isResourceSaved, manualSearchUrl, resourceFormat } from "../lib/recommendations";
+import { discoveryFilter, filterRecommendations, isResourceSaved, manualSearchUrl, resourceFormat } from "../lib/recommendations";
 import { buildSourceResources, canonicalUrl, extractSources, mergeResources, resourceRecordSchema, resourceRequestSchema, youtubeKindForUrl } from "../lib/resources";
 
 test("YouTube formats normalize tracking and channel tabs without mixing formats", () => {
@@ -23,7 +24,7 @@ test("only search evidence of the requested YouTube format reaches ranking", () 
   const block: ContentBlock = { type: "web_search_tool_result", caller: { type: "direct" }, tool_use_id: "test", content: [
     "https://youtube.com/watch?v=rfscVS0vtbw", "https://youtube.com/@coreyms", "https://youtube.com/@coreyms/videos",
     "https://youtube.com/playlist?list=PL-osiE80TeTt2d9bfVyTiXJA-UTHn6WwU",
-  ].map(url => ({ type: "web_search_result", url, title: "Source title", encrypted_content: "evidence", page_age: null })) };
+  ].map(url => ({ type: "web_search_result", url, title: "Python lessons", encrypted_content: "evidence", page_age: null })) };
   for (const format of ["Videos", "Channels", "Playlists"] as const) {
     const target = discoveryFilter(format);
     const { sources } = extractSources([block], target.category, [], target.youtubeKind);
@@ -62,8 +63,8 @@ test("format, difficulty and creator search compose; mixed picks preserve topic 
   assert.deepEqual(filterRecommendations(picks, "Videos", "Beginner", "doesnotexist"), []);
   const corey = filterRecommendations(picks, "Channels", "All levels", "Corey");
   assert.equal(corey.length, 1); assert.equal(corey[0].id, "curated-corey-channel");
-  const balanced = balanceFormats(picks);
-  assert.deepEqual(balanced.slice(0, 5).map(resourceFormat), ["Videos", "Channels", "Playlists", "Blogs", "Books"]);
+  const balanced = rankRecommendations(picks, { topicTitle: path.topics[1].title, concepts: path.topics[1].concepts, pathTitle: path.title, difficulty: path.topics[1].difficulty });
+  assert.ok(["Videos", "Blogs"].includes(resourceFormat(balanced[0])));
   const firstBroader = balanced.findIndex(r => r.matchContext === "path");
   assert.ok(firstBroader > 0);
   assert.ok(balanced.slice(firstBroader).every(r => r.matchContext === "path"));

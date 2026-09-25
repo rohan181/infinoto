@@ -73,12 +73,12 @@ const rank = (sourceId = 0, level = "Advanced") => ({ resources: [{ sourceId, le
 test("resource evidence comes only from real tool results, not model-authored URLs", () => {
   const blocks: ContentBlock[] = [
     { type: "text", text: "Try https://youtube.com/watch?v=ZZZZZZZZZZZ", citations: [] },
-    searchBlock([["https://www.youtube.com/results?search_query=python", "Search"], ["https://www.youtube.com/watch?v=MCs5OvhV9S4&utm_source=test", "Concurrency"], ["https://youtu.be/MCs5OvhV9S4", "Duplicate"]]),
+    searchBlock([["https://www.youtube.com/results?search_query=python", "Search"], ["https://www.youtube.com/watch?v=MCs5OvhV9S4&utm_source=test", "Python concurrency"], ["https://youtu.be/MCs5OvhV9S4", "Duplicate"]]),
   ];
   const { sources } = extractSources(blocks, "YouTube");
   assert.equal(sources.length, 1); assert.equal(sources[0].url, "https://youtube.com/watch?v=MCs5OvhV9S4");
   const resources = buildSourceResources(rank(), sources, resourceInput());
-  assert.equal(resources[0].title, "Concurrency"); assert.equal(resources[0].provenance?.kind, "web-search");
+  assert.equal(resources[0].title, "Python concurrency"); assert.equal(resources[0].provenance?.kind, "web-search");
   assert.throws(() => buildSourceResources(rank(99), sources, resourceInput()), /retrieved source/);
   assert.deepEqual(buildSourceResources(rank(0, "Beginner"), sources, resourceInput()), []);
   assert.equal(extractSources(blocks, "YouTube", [resources[0].url]).sources.length, 0);
@@ -128,9 +128,9 @@ test("new routes validate requests, expand recursively, search with citations, a
         return response([searchBlock([["https://youtube.com/watch?v=MCs5OvhV9S4", "Video to exclude"], ["https://youtube.com/@coreyms", "Corey Schafer"]])]);
       }
       if (mode === "search-error") return response([{ type: "web_search_tool_result", caller: { type: "direct" }, tool_use_id: "srvtoolu_test", content: { type: "web_search_tool_result_error", error_code: "too_many_requests" } }]);
-      if (mode === "pause" && searches === 1) return response([searchBlock([["https://www.youtube.com/watch?v=MCs5OvhV9S4", "Concurrency from the Ground Up"]])], "pause_turn");
+      if (mode === "pause" && searches === 1) return response([searchBlock([["https://www.youtube.com/watch?v=MCs5OvhV9S4", "Python Concurrency from the Ground Up"]])], "pause_turn");
       if (mode === "pause") assert.equal(body.messages[1].content[0].content[0].encrypted_content, "encrypted-test-evidence");
-      return response([searchBlock([["https://www.youtube.com/watch?v=MCs5OvhV9S4", "Concurrency from the Ground Up"]])]);
+      return response([searchBlock([["https://www.youtube.com/watch?v=MCs5OvhV9S4", "Python Concurrency from the Ground Up"]])]);
     }
     rankings++; assert.ok(body.output_config.format); assert.equal(body.tools, undefined);
     if (mode === "channels") {
@@ -151,11 +151,11 @@ test("new routes validate requests, expand recursively, search with citations, a
     const channels = await discover(req({ ...resourceInput(), youtubeKind: "channel" }));
     assert.equal(channels.status, 200); assert.equal((await channels.json()).resources[0].youtubeKind, "channel");
     mode = "pause"; searches = 0;
-    assert.equal((await discover(req(resourceInput()))).status, 200); assert.equal(searches, 2);
-    mode = "search-error"; const unavailable = await discover(req(resourceInput()));
+    assert.equal((await discover(req({ ...resourceInput(), focus: "pause fixture" }))).status, 200); assert.equal(searches, 2);
+    mode = "search-error"; const unavailable = await discover(req({ ...resourceInput(), focus: "search error fixture" }));
     assert.equal(unavailable.status, 503); assert.match((await unavailable.json()).error, /Web search/);
     mode = "auth";
-    for (const [route, body] of [[expand, context()], [discover, resourceInput()]] as const) {
+    for (const [route, body] of [[expand, context()], [discover, { ...resourceInput(), focus: "authentication fixture" }]] as const) {
       const rejected = await route(req(body)); assert.equal(rejected.status, 401);
       assert.match((await rejected.json()).error, /rejected the API key/);
     }

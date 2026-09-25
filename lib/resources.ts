@@ -3,6 +3,7 @@ import type { ContentBlock } from "@anthropic-ai/sdk/resources/messages";
 import type { Resource, ResourceType, YouTubeKind } from "@/app/data";
 import { matchesSocialPlatform, socialPlatforms, socialSource } from "./social";
 import { difficultySchema } from "./learning";
+import { lessonRelevance } from "./topic-search";
 
 export const resourceTypeSchema = z.enum(["YouTube", "Blogs", "Books", "Papers", "Social", "Other"]);
 export const discoveryProviderSchema = z.enum(["exa", "claude", "youtube"]);
@@ -89,6 +90,8 @@ export function isDirectResourceUrl(raw: string, category?: ResourceType, kind: 
   const youtube = /^(?:m\.)?youtube\.com$/.test(host);
   if (category === "Social") return !!socialSource(normalized);
   if (category === "Blogs" && socialSource(normalized)) return false;
+  if (category === "Blogs" && (/\.(?:ipynb|py|js|ts|zip)$/i.test(url.pathname)
+    || /(?:^|\.)(?:github\.com|gitlab\.com|raw\.githubusercontent\.com|colab\.research\.google\.com)$/.test(host))) return false;
   if (category === "YouTube") { const actual = youtubeKindForUrl(normalized); return !!actual && (kind === "all" || actual === kind); }
   if (youtube || host === "youtu.be") return !category;
   if (category === "Blogs" && (url.pathname === "/" || /(?:^|\.)(?:arxiv\.org|doi\.org|pubmed\.ncbi\.nlm\.nih\.gov|reddit\.com|quora\.com|stackoverflow\.com|stackexchange\.com)$/.test(host)
@@ -139,6 +142,10 @@ export function buildSourceResources(raw: unknown, sources: SourceRecord[], requ
     if (request.level !== "All levels" && item.level !== request.level) return [];
     if (!isDirectResourceUrl(source.url, request.category, request.youtubeKind)) throw new Error("The recommendation is not a direct source link of the requested format.");
     if (request.category === "Social" && !matchesSocialPlatform(source.url, request.socialPlatform)) return [];
+    // A model's explanation is not independent evidence that a page teaches the topic.
+    // Apply this to individual lessons; book and channel titles can be intentionally broad.
+    if ((request.category === "Blogs" || (request.category === "YouTube" && youtubeKindForUrl(source.url) === "video"))
+      && lessonRelevance(source.title, source.excerpt, request, item.reason) < 1) return [];
     const domain = new URL(source.url).hostname;
     return [{
       id: `source-${crypto.randomUUID()}`, type: request.category, title: source.title,

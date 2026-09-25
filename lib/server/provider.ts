@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
+import { RequestGate } from "./request-gate";
 
 export class RequestError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -29,24 +30,33 @@ export async function readInput<T>(request: Request, schema: z.ZodType<T>, maxBy
   return parsed.data;
 }
 
-let windowStart = Date.now(), active = 0;
+let windowStart = Date.now();
+const gates = { generation: new RequestGate(2), discovery: new RequestGate(2) };
 const requests = { generation: 0, discovery: 0 };
 type RequestBucket = keyof typeof requests;
 export function anthropicApiKey() { return process.env.INFINOTO_ANTHROPIC_API_KEY?.trim() || process.env.ANTHROPIC_API_KEY?.trim(); }
-export async function withClaude<T>(run: (client: Anthropic, model: string) => Promise<T>, bucket: RequestBucket = "generation"): Promise<T> {
+export async function withClaude<T>(run: (client: Anthropic, model: string) => Promise<T>, bucket: RequestBucket = "generation", signal?: AbortSignal): Promise<T> {
   const apiKey = anthropicApiKey();
   if (!apiKey) throw new RequestError("Add a valid ANTHROPIC_API_KEY to the server environment (.env.local locally or Vercel Project Settings → Environment Variables) to enable Claude.", 503);
-  return withRequestLimit(() => run(new Anthropic({ apiKey, timeout: 110000, maxRetries: 0 }), process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6"), bucket);
+  return withRequestLimit(() => run(new Anthropic({ apiKey, timeout: 110000, maxRetries: 0 }), process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6"), bucket, signal);
 }
 
 /** Shared across providers so switching engines cannot bypass local limits. */
-export async function withRequestLimit<T>(run: () => Promise<T>, bucket: RequestBucket = "generation"): Promise<T> {
-  if (Date.now() - windowStart > 3600000) { windowStart = Date.now(); requests.generation = 0; requests.discovery = 0; }
-  if (requests[bucket] >= (bucket === "discovery" ? 120 : 30)) throw new RequestError(`The hourly ${bucket} limit has been reached. Please try again later.`, 429);
-  if (active >= 2) throw new RequestError("Infinity is working on other requests. Please try again in a moment.", 429);
-  requests[bucket]++; active++;
-  try { return await run(); }
-  finally { active--; }
+export async function withRequestLimit<T>(run: () => Promise<T>, bucket: RequestBucket = "generation", signal?: AbortSignal): Promise<T> {
+  const waiting = AbortSignal.timeout(15000);
+  let release: () => void;
+  try { release = await gates[bucket].acquire(signal ? AbortSignal.any([signal, waiting]) : waiting); }
+  catch {
+    signal?.throwIfAborted();
+    throw new RequestError("Infinity is working on other requests. Please try again in a moment.", 429);
+  }
+  try {
+    signal?.throwIfAborted();
+    if (Date.now() - windowStart > 3600000) { windowStart = Date.now(); requests.generation = 0; requests.discovery = 0; }
+    if (requests[bucket] >= (bucket === "discovery" ? 120 : 30)) throw new RequestError(`The hourly ${bucket} limit has been reached. Please try again later.`, 429);
+    requests[bucket]++;
+    return await run();
+  } finally { release(); }
 }
 
 export function providerFailure(error: unknown): Response {

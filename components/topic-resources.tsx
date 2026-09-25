@@ -6,13 +6,16 @@ import type { DiscoveryProvider, LearningPath, Resource, Topic } from "@/app/dat
 import { resourcesForTopic } from "@/lib/curated-resources";
 import { matchesSocialPlatform, socialSource, socialPlatforms, type SocialFilter } from "@/lib/social";
 import { canonicalUrl, sourceAuthor } from "@/lib/resources";
-import { balanceFormats, discoveryFilter, filterRecommendations, formats, isResourceSaved, manualSearchUrl, resourceFormat, type RecommendationFormat, type RecommendationLevel } from "@/lib/recommendations";
+import { discoveryFilter, filterRecommendations, formats, isResourceSaved, manualSearchUrl, resourceFormat, type RecommendationFormat, type RecommendationLevel } from "@/lib/recommendations";
 import { rankRecommendations, recommendationFit } from "@/lib/recommendation-ranking";
 import ContentAnalysis from "./content-analysis";
 import VideoComparison from "./video-comparison";
 import { formatDuration } from "@/lib/youtube";
 import { preferredProvider, type DiscoveryAvailability } from "@/lib/discovery-config";
 import { useTopicDiscovery } from "./use-topic-discovery";
+import TopicOverview from "./topic-overview";
+import { overviewContext } from "@/lib/topic-overview";
+import { concreteConcepts } from "@/lib/topic-search";
 
 export type SavedResource = Resource & { topicTitle: string; pathTitle: string };
 const formatIcons = { All: Sparkles, Videos: Play, Channels: Radio, Playlists: ListVideo, Blogs: FileText, Books: BookOpen, Papers: GraduationCap, Courses: Library, Social: MessageCircle };
@@ -101,15 +104,16 @@ export default function TopicResources({ path, topic, saved, onSave, onResources
   useEffect(() => { setCrossAnalysis(false); setCompareResource(null); setQuery(""); setCreator("All creators"); setFocusDraft(""); setCount(6); }, [topic.id]);
   const all = useMemo(() => resourcesForTopic(topic, path.title), [topic, path.title]);
   const crossResources = useMemo(() => [...path.topics.flatMap(t => resourcesForTopic(t, path.title)), ...saved], [path, saved]);
-  const scoped = includeRelated ? all : all.filter(r => r.matchContext !== "path");
+  const activeFocus = focus.topicId === topic.id ? focus.value : "";
+  const rankingContext = { topicTitle: topic.title, pathTitle: path.title, concepts: topic.concepts, focus: activeFocus, difficulty: level === "All levels" ? topic.difficulty : level };
+  const scoped = all.filter(r => (includeRelated || r.matchContext !== "path") && (!activeFocus
+    || recommendationFit(r, rankingContext).relevance >= 1));
   const platformScoped = format === "Social" ? scoped.filter(r => r.type === "Social" && matchesSocialPlatform(r.url, socialPlatform)) : scoped;
   const base = filterRecommendations(platformScoped, format, level, query);
   const creators = [...new Set(base.map(r => r.author))];
   const selectedCreator = creators.includes(creator) ? creator : "All creators";
   const filtered = selectedCreator === "All creators" ? base : base.filter(r => r.author === selectedCreator);
-  const activeFocus = focus.topicId === topic.id ? focus.value : "";
-  const rankingContext = { topicTitle: topic.title, pathTitle: path.title, concepts: topic.concepts, focus: activeFocus, difficulty: level === "All levels" ? topic.difficulty : level };
-  const resources = sort === "fit" ? rankRecommendations(filtered, rankingContext) : format === "All" ? balanceFormats(filtered) : filtered;
+  const resources = sort === "fit" ? rankRecommendations(filtered, rankingContext) : filtered;
   const existing = all.filter(r => resourceFormat(r) === effectiveFormat && (format !== "Social" || matchesSocialPlatform(r.url, socialPlatform)));
   const existingBlogs = all.filter(r => resourceFormat(r) === "Blogs");
   const full = existing.length >= 90 && (format !== "All" || existingBlogs.length >= 90);
@@ -126,13 +130,20 @@ export default function TopicResources({ path, topic, saved, onSave, onResources
     },
     cancel: () => { primaryAction.cancel(); blogAction.cancel(); },
   };
-  useEffect(() => { resultsRef.current?.scrollTo({ top: 0, behavior: "instant" }); }, [topic.id, format, level, query, creator, provider, socialPlatform, sort]);
+  useEffect(() => { resultsRef.current?.scrollTo({ top: 0, behavior: "instant" }); }, [topic.id, format, level, query, creator, provider, socialPlatform, sort, activeFocus]);
   function changeFormat(next: RecommendationFormat) { setFormat(next); setCreator("All creators"); setQuery(""); setCount(6); }
   function changeProvider(next: DiscoveryProvider, video = target.category === "YouTube") {
     if (video) setVideoProvider(next); else if (next !== "youtube") setWebProvider(next);
     try { localStorage.setItem(video ? "infinity-video-provider" : "infinity-web-provider", next); } catch { /* Optional preference. */ }
   }
-  const hasFilters = !!query || level !== "All levels" || selectedCreator !== "All creators";
+  const hasFilters = !!query || !!activeFocus || level !== "All levels" || selectedCreator !== "All creators";
+  function focusOn(value: string) { setFocus({ topicId: topic.id, value }); setFocusDraft(value); setQuery(""); setCreator("All creators"); setCount(6); }
+  const focusOptions = concreteConcepts({ topicTitle: topic.title, pathTitle: path.title, concepts: topic.concepts }).filter(value => value.toLowerCase() !== topic.title.toLowerCase()).slice(0, 6);
+  function clearFilters() { setLevel("All levels"); setQuery(""); setCreator("All creators"); focusOn(""); }
+  function retrySearch() {
+    if (format !== "All" || primaryAction.phase === "error") primaryAction.refresh();
+    if (format === "All" && blogAction.phase === "error") blogAction.refresh();
+  }
   return <section className={`recommendation-engine library-refresh ${expanded ? "expanded" : ""}`} aria-label="Content recommendations">
     <header className="engine-header">
       <div className="engine-eyebrow"><span><Library size={14}/> YOUR LEARNING LIBRARY</span><span className="library-ready"><i/>Follows your topic</span></div>
@@ -140,31 +151,33 @@ export default function TopicResources({ path, topic, saved, onSave, onResources
       <label className="engine-topic"><span>EXPLORING</span><select aria-label="Recommendation topic" value={topic.id} onChange={e => onSelect(e.target.value)}>{path.topics.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}</select><ChevronDown size={16}/></label>
       <div className="topic-context"><span className="topic-level">{topic.difficulty}</span><span>{topic.concepts.slice(0, 2).join(" · ")}</span></div>
     </header>
+    <TopicOverview key={overviewContext(path.title, topic)} path={path} topic={topic}/>
     <div className="cross-entry"><button onClick={() => { action.cancel(); setCrossAnalysis(true); }}><GitCompareArrows size={17}/><span>Cross-content analysis<small>Compare videos, articles & social posts · Add audio with Whisper</small></span><ArrowUpRight size={16}/></button></div>
     <div className="engine-controls">
+      {(focusOptions.length > 0 || activeFocus) && <div className="recommendation-focus" role="group" aria-label="Focus recommendations"><span>FOCUS ON</span><button aria-pressed={!activeFocus} onClick={() => focusOn("")}>Whole topic</button>{[...new Set([...focusOptions, ...(activeFocus ? [activeFocus] : [])])].map(concept => <button key={concept} aria-pressed={activeFocus === concept} onClick={() => focusOn(concept)}>{concept}</button>)}</div>}
       <div className="format-tabs" role="group" aria-label="Content format">{formats.map(item => { const Icon = formatIcons[item]; const total = filterRecommendations(scoped, item, level).length; return <button key={item} aria-pressed={format === item} className={format === item ? "selected" : ""} onClick={() => changeFormat(item)}><Icon size={15}/>{item === "All" ? "All sources" : item === "Courses" ? "Web" : item}<small>{total || ""}</small></button>; })}</div>
       {format === "Social" && <div className="social-controls"><div className="social-platforms" role="group" aria-label="Social platform">{(["All", ...socialPlatforms] as const).map(platform => <button key={platform} aria-pressed={socialPlatform === platform} onClick={() => { setSocialPlatform(platform); setCreator("All creators"); setCount(6); }}>{platform === "All" ? "All platforms" : platform}</button>)}</div><p>Public posts, discussions and creators related to this topic. Some links may require signing in. Add source text to compare posts in your cross-content graph.</p></div>}
       <div className="engine-filter-row"><label className="engine-search"><Search size={15}/><input aria-label="Search recommendations" placeholder="Filter this collection…" value={query} onChange={e => { setQuery(e.target.value); setCount(6); setCreator("All creators"); }}/>{query && <button aria-label="Clear recommendation search" onClick={() => setQuery("")}><X size={14}/></button>}</label><label className="engine-level"><SlidersHorizontal size={14}/><select aria-label="Recommendation difficulty" value={level} onChange={e => { setLevel(e.target.value as RecommendationLevel); setCreator("All creators"); setCount(6); }}>{levels.map(item => <option key={item}>{item}</option>)}</select></label></div>
-      <div className="recommendation-order"><p>{sort === "fit" ? `Prioritizing ${rankingContext.difficulty.toLowerCase()} resources for ${activeFocus || topic.title}, with different creators and ways to learn.` : "Showing recently discovered resources first within each format."}</p><label><span>ORDER BY</span><select aria-label="Recommendation order" value={sort} onChange={event => { setSort(event.target.value as "fit" | "recent"); setCount(6); }}><option value="fit">Best for this node</option><option value="recent">Recently found</option></select></label></div>
+      <div className="recommendation-order"><p>{sort === "fit" ? `Prioritizing ${rankingContext.difficulty.toLowerCase()} resources for ${activeFocus || topic.title}, with different creators and ways to learn.` : "Showing recently discovered resources first."}</p><label><span>ORDER BY</span><select aria-label="Recommendation order" value={sort} onChange={event => { setSort(event.target.value as "fit" | "recent"); setCount(6); }}><option value="fit">Best for this node</option><option value="recent">Recently found</option></select></label></div>
       <div className="library-search-status"><span><i className={action.busy ? "searching" : ""}/>{action.busy ? `Finding ${format === "All" ? "videos and blogs" : effectiveFormat === "Courses" ? "web resources" : effectiveFormat === "Social" ? "social content" : effectiveFormat.toLowerCase()} for this topic` : `Searching with ${providerLabel}`}</span><button aria-expanded={settings} aria-controls="library-search-settings" onClick={() => setSettings(v => !v)}><Settings2 size={14}/>Search settings<ChevronDown size={12}/></button></div>
       {settings && <div id="library-search-settings" className="library-search-settings">
         <div className="discovery-provider-row"><span>{format === "All" ? "VIDEO SEARCH ENGINE" : "SEARCH ENGINE"}</span><div className="discovery-provider-switch" role="group" aria-label="Discovery provider">{(target.category === "YouTube" ? ["youtube", "exa", "claude"] as const : ["exa", "claude"] as const).map(engine => <button key={engine} aria-pressed={provider === engine} disabled={available !== null && !available[engine]} title={available && !available[engine] ? "Not configured on this server" : undefined} onClick={() => changeProvider(engine)}>{engine === "youtube" ? <Play size={12}/> : <Sparkles size={12}/>} {engine === "youtube" ? "YouTube" : engine === "exa" ? "Exa" : "Claude"}{provider === engine && <Check size={12}/>}</button>)}</div></div>
         {format === "All" && <div className="discovery-provider-row"><span>BLOG SEARCH ENGINE</span><div className="discovery-provider-switch" role="group" aria-label="Blog discovery provider">{(["exa", "claude"] as const).map(engine => <button key={engine} aria-pressed={webProvider === engine} disabled={available !== null && !available[engine]} onClick={() => changeProvider(engine, false)}><Sparkles size={12}/>{engineLabel(engine)}{webProvider === engine && <Check size={12}/>}</button>)}</div></div>}
         <p>Videos use {videoProvider === "youtube" ? "YouTube" : videoProvider === "exa" ? "Exa" : "Claude"}; social, blogs and web use {webProvider === "exa" ? "Exa" : "Claude"}. Available choices are remembered.</p>
-        <form className="refine-resource-search" onSubmit={e => { e.preventDefault(); setFocus({ topicId: topic.id, value: focusDraft.trim() }); }}><label htmlFor="resource-focus">Refine the live search</label><div><input id="resource-focus" value={focusDraft} onChange={e => setFocusDraft(e.target.value)} maxLength={100} placeholder={`e.g. ${topic.title} worked examples`}/><button type="submit">Apply<ArrowRight size={13}/></button></div></form>
-        {activeFocus && <button className="clear-search-focus" onClick={() => { setFocus({ topicId: topic.id, value: "" }); setFocusDraft(""); }}>Clear “{activeFocus}”<X size={12}/></button>}
+        <form className="refine-resource-search" onSubmit={e => { e.preventDefault(); focusOn(focusDraft.trim()); }}><label htmlFor="resource-focus">Refine the live search</label><div><input id="resource-focus" value={focusDraft} onChange={e => setFocusDraft(e.target.value)} maxLength={100} placeholder={`e.g. ${topic.title} worked examples`}/><button type="submit">Apply<ArrowRight size={13}/></button></div></form>
+        {activeFocus && <button className="clear-search-focus" onClick={() => focusOn("")}>Clear “{activeFocus}”<X size={12}/></button>}
         <label className="related-resource-toggle"><input type="checkbox" checked={includeRelated} onChange={e => setIncludeRelated(e.target.checked)}/>Include broader learning-path resources</label>
       </div>}
     </div>
     <div className="engine-results" ref={resultsRef} aria-busy={action.busy}>
       <div className="results-heading"><div><span>{format === "All" ? "Your collection" : format === "Courses" ? "From across the web" : format === "Social" ? `${socialPlatform === "All" ? "Social" : socialPlatform} for you` : `${format} for you`}</span><small>{resources.length} sources · {topic.title}</small></div>{creators.length > 1 && <select aria-label="Filter by creator" value={selectedCreator} onChange={e => { setCreator(e.target.value); setCount(6); }}><option>All creators</option>{creators.map(item => <option key={item}>{item}</option>)}</select>}</div>
-      {hasFilters && <div className="active-library-filters"><span>{level !== "All levels" ? level : "Filtered collection"}{selectedCreator !== "All creators" ? ` · ${selectedCreator}` : ""}</span><button onClick={() => { setLevel("All levels"); setQuery(""); setCreator("All creators"); }}>Clear filters<X size={12}/></button></div>}
+      {hasFilters && <div className="active-library-filters"><span>{activeFocus || (level !== "All levels" ? level : "Filtered collection")}{selectedCreator !== "All creators" ? ` · ${selectedCreator}` : ""}</span><button onClick={clearFilters}>Clear filters<X size={12}/></button></div>}
       {action.busy && <div className="engine-loading" role="status"><LoaderCircle size={19} className="spin"/><div><strong>Finding a good place to start…</strong><p>Searching {providerLabel} for {activeFocus || topic.title}.</p></div><button onClick={action.cancel}>Stop</button></div>}
-      {action.error && <div className="engine-error" role="alert"><span className="error-orbit">!</span><div><strong>Search needs attention</strong><p>{action.error}</p><div className="search-recovery"><button onClick={() => action.refresh()}>Retry search<RefreshCw size={13}/></button><button onClick={() => setSettings(true)}>Change engine</button><a href={manualSearchUrl(activeFocus || topic.title, effectiveFormat, level, socialPlatform)} target="_blank" rel="noopener noreferrer">Search directly<ArrowUpRight size={12}/></a></div></div></div>}
-      {!action.busy && action.note && <p className="engine-notice" role="status"><Check size={13}/>{action.note}</p>}
+      {action.error && <div className="engine-error" role="alert"><span className="error-orbit">!</span><div><strong>Search needs attention</strong><p>{action.error}</p><div className="search-recovery"><button onClick={retrySearch}>Retry search<RefreshCw size={13}/></button><button onClick={() => setSettings(true)}>Change engine</button><a href={manualSearchUrl(activeFocus || topic.title, effectiveFormat, level, socialPlatform)} target="_blank" rel="noopener noreferrer">Search directly<ArrowUpRight size={12}/></a></div></div></div>}
+      {action.note && <p className="engine-notice" role="status"><Check size={13}/>{action.note}</p>}
       {action.busy && !resources.length && <div className="resource-skeletons" aria-hidden="true">{[0, 1, 2].map(i => <div key={i}><i/><span/><span/><span/></div>)}</div>}
-      <div className="recommendation-grid">{resources.slice(0, count).map((resource, index) => <ResourceCard key={resource.id} resource={resource} fit={sort === "fit" ? recommendationFit(resource, rankingContext) : undefined} startHere={sort === "fit" && index === 0 && resource.matchContext !== "path" && resource.level === rankingContext.difficulty && recommendationFit(resource, rankingContext).relevance >= 1} saved={isResourceSaved(saved, path.id, resource)} onSave={() => onSave(resource, topic.title)} onCompare={() => setCompareResource(resource)}/>)}</div>
-      {!resources.length && !action.busy && <div className="engine-empty"><span><Search size={25}/></span><h3>{hasFilters ? "Let’s widen the search." : "A topic worth exploring."}</h3><p>{hasFilters ? "No sources match these filters yet. Try All levels to include sources whose difficulty has not been assessed." : format === "Social" ? "No public social results found for this topic and platform yet. Try another platform or refine the search." : "No suitable sources found for this topic yet. Refine the search or try another engine."}</p><div><button onClick={() => { if (hasFilters) { setQuery(""); setCreator("All creators"); setLevel("All levels"); } else setSettings(true); }}>{hasFilters ? "Clear filters" : "Refine search"}<ArrowRight size={13}/></button></div></div>}
+      <div className="recommendation-grid">{resources.slice(0, count).map((resource, index) => <ResourceCard key={resource.id} resource={resource} fit={sort === "fit" ? recommendationFit(resource, rankingContext) : undefined} startHere={sort === "fit" && index === 0 && resource.matchContext !== "path" && resource.level === rankingContext.difficulty && recommendationFit(resource, rankingContext).relevance >= 3} saved={isResourceSaved(saved, path.id, resource)} onSave={() => onSave(resource, topic.title)} onCompare={() => setCompareResource(resource)}/>)}</div>
+      {!resources.length && !action.busy && <div className="engine-empty"><span><Search size={25}/></span><h3>{hasFilters ? "Let’s widen the search." : "A topic worth exploring."}</h3><p>{hasFilters ? "No sources match these filters yet. Try All levels to include sources whose difficulty has not been assessed." : format === "Social" ? "No public social results found for this topic and platform yet. Try another platform or refine the search." : "No suitable sources found for this topic yet. Refine the search or try another engine."}</p><div><button onClick={() => { if (hasFilters) clearFilters(); else setSettings(true); }}>{hasFilters ? "Clear filters" : "Refine search"}<ArrowRight size={13}/></button></div></div>}
       {count < resources.length && <button className="show-more-picks" onClick={() => setCount(n => n + 6)}>Show {Math.min(6, resources.length - count)} more<ArrowDown size={14}/><small>{count} of {resources.length}</small></button>}
       {!action.busy && !full && <button className="find-more-sources" onClick={() => action.refresh((format === "All" ? [...existing, ...existingBlogs] : existing).map(r => r.url).slice(-90))}><RefreshCw size={14}/>{action.phase === "stopped" ? "Resume search" : "Find more sources"}<span>with {providerLabel}</span></button>}
       <footer className="engine-footnote"><span><Link2 size={13}/>Direct sources, chosen for this topic</span><p>{format === "Social" ? "Search covers publicly indexed content. Availability varies by platform; these are external links, not a live social feed." : format === "All" ? "Videos and blogs are searched together. Difficulty is based on available source evidence; All levels includes unassessed sources." : provider === "youtube" ? "Difficulty follows labels in video titles. All levels includes unlabeled lessons." : "Difficulty is an estimate of starting knowledge. Some sources may require payment."}</p></footer>
